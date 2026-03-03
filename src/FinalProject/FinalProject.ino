@@ -1,12 +1,18 @@
-#include "pir.h"
+#include "../pir.h"
+#include "../ultrasonic.h"
 
 // Define pins
+#define TRIG_PIN 2
+#define ECHO_PIN 3
+#define LOITER_DISTANCE_CM 100   // distance threshold for approach
+#define LOITER_TIME_MS 5000      // 5 seconds to detect loitering
 #define PIR_PIN 2
 #define LED_PIN 13
 
 void setup() {
     Serial.begin(9600);        // Initialize serial monitor
     PIR_init(PIR_PIN, LED_PIN); // Initialize PIR module
+    Ultrasonic_init(TRIG_PIN, ECHO_PIN);
 }
 
 void loop() {
@@ -19,5 +25,19 @@ void loop() {
     }
 
     delay(500);  // Half-second delay to slow serial output for readability
+
+    Ultrasonic_update();
+
+    int dist = Ultrasonic_getDistance();
+    Serial.print("Current distance: ");
+    Serial.println(dist);
+
+    if (Ultrasonic_isLoitering(LOITER_DISTANCE_CM, LOITER_TIME_MS))
+    {
+        Serial.println("Loitering detected! Show 'Enter PIN' on display.");
+        // TODO: trigger display message in your security system
+    }
+
+    delay(50); // small delay for sensor stability
 }
 
