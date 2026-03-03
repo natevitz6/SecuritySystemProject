@@ -1,0 +1,13 @@
+# macOS
+.DS_Store
+
+# Arduino build artifacts
+*.ino.cpp
+*.elf
+*.bin
+
+# VSCode
+.vscode/
+
+# Temporary
+*.log
