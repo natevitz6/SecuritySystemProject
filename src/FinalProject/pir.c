@@ -12,8 +12,6 @@ void PIR_init(uint8_t inputPin, uint8_t ledPin) {
 
     pinMode(_ledPin, OUTPUT);
     pinMode(_inputPin, INPUT);
-
-    Serial.begin(9600);
 }
 
 void PIR_update(void) {
@@ -23,13 +21,11 @@ void PIR_update(void) {
         digitalWrite(_ledPin, HIGH);
 
         if (_pirState == LOW) {
-            Serial.println("Motion detected!");
             _pirState = HIGH;
         }
     } else {
         digitalWrite(_ledPin, LOW);
         if (_pirState == HIGH) {
-            Serial.println("Motion ended!");
             _pirState = LOW;
         }
     }

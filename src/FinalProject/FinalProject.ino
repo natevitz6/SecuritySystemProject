@@ -1,13 +1,23 @@
-#include "../pir.h"
-#include "../ultrasonic.h"
+#include "pir.h"
+#include "ultrasonic.h"
 
 // Define pins
 #define TRIG_PIN 2
-#define ECHO_PIN 3
+#define ECHO_PIN 1
 #define LOITER_DISTANCE_CM 100   // distance threshold for approach
 #define LOITER_TIME_MS 5000      // 5 seconds to detect loitering
 #define PIR_PIN 2
 #define LED_PIN 13
+
+extern "C" {
+  void PIR_init(uint8_t inputPin, uint8_t ledPin);
+  void PIR_update(void);
+  bool PIR_isMotionDetected(void);
+  void Ultrasonic_init(uint8_t trigPin, uint8_t echoPin);
+  void Ultrasonic_update(void);
+  int Ultrasonic_getDistance(void);
+
+}
 
 void setup() {
     Serial.begin(9600);        // Initialize serial monitor

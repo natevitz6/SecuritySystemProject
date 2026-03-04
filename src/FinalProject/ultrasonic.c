@@ -16,7 +16,6 @@ void Ultrasonic_init(uint8_t trigPin, uint8_t echoPin)
     pinMode(_trigPin, OUTPUT);
     pinMode(_echoPin, INPUT);
 
-    Serial.begin(9600);
 }
 
 void Ultrasonic_update(void)
@@ -29,15 +28,11 @@ void Ultrasonic_update(void)
     digitalWrite(_trigPin, LOW);
 
     // Read echo
-    _duration = pulseIn(_echoPin, HIGH);
+    _duration = pulseIn(_echoPin, HIGH, 1000000);
 
     // Calculate distance in cm
     _distance = _duration * 0.034 / 2;
 
-    // Print distance for debugging
-    Serial.print("Distance = ");
-    Serial.print(_distance);
-    Serial.println(" cm");
 }
 
 int Ultrasonic_getDistance(void)
