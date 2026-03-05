@@ -17,6 +17,11 @@
 #define RED_LED_PIN   5    //solid = locked, blinking = alarm
 #define GREEN_LED_PIN 6 
 #define IR_RECEIVE_PIN 15
+#define RFID_SS_PIN  9
+#define RFID_RST_PIN 10
+#define SCK_PIN 12
+#define MOSI_PIN 11
+#define MISO_PIN 13
 
 extern "C" {
   void PIR_init(uint8_t inputPin, uint8_t ledPin);
@@ -32,6 +37,9 @@ extern "C" {
   bool    IRRemote_wasClearPressed(void);
   uint8_t IRRemote_getDigitCount(void);
   void IRRemote_getEnteredPIN(uint8_t *buf, uint8_t len);
+  void    RFID_init(uint8_t ssPin, uint8_t rstPin);
+  bool    RFID_update(void);
+  bool    RFID_isAuthorized(void);
 }
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);
@@ -271,6 +279,37 @@ void IR_Task(void *pvParameters) {
     }
 }
 
+void RFID_Task(void *pvParameters) {
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    const TickType_t xFrequency = pdMS_TO_TICKS(100); // 10Hz — cards don't need fast polling
+
+    while (1) {
+        bool cardScanned = RFID_update();
+
+        if (cardScanned) {
+            system_message_t msg;
+            system_message_t uiMsg;
+
+            if (RFID_isAuthorized()) {
+                msg.type  = EVENT_ACCESS_GRANTED;
+                msg.value = 0;
+                uiMsg.type = EVENT_DISPLAY_UPDATE;
+                snprintf(uiMsg.displayMsg, sizeof(uiMsg.displayMsg), "Access Granted!");
+            } else {
+                msg.type  = EVENT_ACCESS_DENIED;
+                msg.value = 0;
+                uiMsg.type = EVENT_DISPLAY_UPDATE;
+                snprintf(uiMsg.displayMsg, sizeof(uiMsg.displayMsg), "Access Denied!");
+            }
+
+            xQueueSend(sensorQueue, &msg, 0);
+            xQueueSend(uiQueue, &uiMsg, 0);
+        }
+
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+    }
+}
+
 // LCD/UI Task: Handles all display updates
 void LCD_Task(void *pvParameters) {
     system_message_t uiMsg;
@@ -363,6 +402,7 @@ void setup() {
     PIR_init(PIR_PIN, LED_PIN);
     Ultrasonic_init(TRIG_PIN, ECHO_PIN);
     IRRemote_init(IR_RECEIVE_PIN);
+    RFID_init(RFID_SS_PIN, RFID_RST_PIN);
 
     // Create queues
     sensorQueue = xQueueCreate(10, sizeof(system_message_t));
@@ -395,6 +435,15 @@ void setup() {
         NULL, 
         2, 
         NULL, 
+        0);
+    
+    xTaskCreatePinnedToCore(
+        RFID_Task,
+        "RFID Task",
+        4096,
+        NULL,
+        2,
+        NULL,
         0);
 
     xTaskCreatePinnedToCore(

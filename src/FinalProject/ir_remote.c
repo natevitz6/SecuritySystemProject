@@ -6,19 +6,19 @@
 static const uint8_t CORRECT_PIN[PIN_LENGTH] = {1, 2, 3, 4}; // change to your PIN
 
 // ── Replace these with your actual hex codes from IRTest.ino ─────
-#define IR_CODE_0    0x00  // TODO: replace
-#define IR_CODE_1    0x00  // TODO: replace
-#define IR_CODE_2    0x00  // TODO: replace
-#define IR_CODE_3    0x00  // TODO: replace
-#define IR_CODE_4    0x00  // TODO: replace
-#define IR_CODE_5    0x00  // TODO: replace
-#define IR_CODE_6    0x00  // TODO: replace
-#define IR_CODE_7    0x00  // TODO: replace
-#define IR_CODE_8    0x00  // TODO: replace
-#define IR_CODE_9    0x00  // TODO: replace
-#define IR_CODE_OK   0x00  // TODO: replace
-#define IR_CODE_CLR  0x00  // TODO: replace (the * or clear button)
-#define IR_CODE_DISARM 0x00 // TODO: replace (a dedicated disarm button e.g. # )
+#define IR_CODE_0    0x19  // TODO: replace
+#define IR_CODE_1    0x45  // TODO: replace
+#define IR_CODE_2    0x46  // TODO: replace
+#define IR_CODE_3    0x47  // TODO: replace
+#define IR_CODE_4    0x44  // TODO: replace
+#define IR_CODE_5    0x40  // TODO: replace
+#define IR_CODE_6    0x43  // TODO: replace
+#define IR_CODE_7    0x07 // TODO: replace
+#define IR_CODE_8    0x15  // TODO: replace
+#define IR_CODE_9    0x09  // TODO: replace
+#define IR_CODE_OK   0x1C  // TODO: replace
+#define IR_CODE_CLR  0x16  // TODO: replace (the * button)
+#define IR_CODE_DISARM 0x0D // TODO: replace (# button)
 
 // ── Private state ─────────────────────────────────────────────────
 static uint8_t  _receivePin;
