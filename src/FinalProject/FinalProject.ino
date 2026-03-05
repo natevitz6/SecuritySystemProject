@@ -16,6 +16,7 @@
 #define LED_PIN 13
 #define RED_LED_PIN   5    //solid = locked, blinking = alarm
 #define GREEN_LED_PIN 6 
+#define IR_RECEIVE_PIN 15
 
 extern "C" {
   void PIR_init(uint8_t inputPin, uint8_t ledPin);
@@ -25,7 +26,12 @@ extern "C" {
   void Ultrasonic_update(void);
   int Ultrasonic_getDistance(void);
   bool Ultrasonic_isLoitering(int distanceThresholdCm, unsigned long timeLimitMs);
-
+  void    IRRemote_init(uint8_t receivePin);
+  bool    IRRemote_update(void);
+  bool    IRRemote_isPINCorrect(void);
+  bool    IRRemote_wasClearPressed(void);
+  uint8_t IRRemote_getDigitCount(void);
+  void IRRemote_getEnteredPIN(uint8_t *buf, uint8_t len);
 }
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);
@@ -40,7 +46,7 @@ typedef enum {
     EVENT_ALARM_TRIGGER,
     EVENT_ALARM_CLEAR,
     EVENT_ACCESS_GRANTED, 
-    EVENT_ACCESS_DENIED 
+    EVENT_ACCESS_DENIED
 } system_event_t;
 
 // System state machine
@@ -145,11 +151,20 @@ void SecurityController_Task(void *pvParameters) {
                     break;
 
                 case STATE_ALARM:
-                    // Only a manual disarm (IR remote) can exit this state
-                    if (msg.type == EVENT_ALARM_CLEAR) {
+                    // Correct PIN disarms the alarm
+                    if (msg.type == EVENT_ACCESS_GRANTED) {
                         state = STATE_IDLE;
                         uiMsg.type = EVENT_DISPLAY_UPDATE;
                         snprintf(uiMsg.displayMsg, sizeof(uiMsg.displayMsg), "System Disarmed");
+                        xQueueSend(uiQueue, &uiMsg, 0);
+                        alarmMsg.type = EVENT_ALARM_CLEAR;
+                        xQueueSend(alarmQueue, &alarmMsg, 0);
+                    }
+                    // Dedicated admin override button also disarms
+                    else if (msg.type == EVENT_ALARM_CLEAR) {
+                        state = STATE_IDLE;
+                        uiMsg.type = EVENT_DISPLAY_UPDATE;
+                        snprintf(uiMsg.displayMsg, sizeof(uiMsg.displayMsg), "Admin Override");
                         xQueueSend(uiQueue, &uiMsg, 0);
                         alarmMsg.type = EVENT_ALARM_CLEAR;
                         xQueueSend(alarmQueue, &alarmMsg, 0);
@@ -203,6 +218,53 @@ void Ultrasonic_Task(void *pvParameters) {
             msg.type = EVENT_LOITERING;
             msg.value = dist;
             xQueueSend(sensorQueue, &msg, 0);
+        }
+
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+    }
+}
+
+void IR_Task(void *pvParameters) {
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    const TickType_t xFrequency = pdMS_TO_TICKS(16); // ~64Hz
+
+    while (1) {
+        bool pinSubmitted = IRRemote_update();
+
+        system_message_t msg;
+        system_message_t uiMsg;
+
+        if (IRRemote_wasClearPressed()) {
+            // Give LCD feedback that entry was cleared
+            uiMsg.type = EVENT_DISPLAY_UPDATE;
+            snprintf(uiMsg.displayMsg, sizeof(uiMsg.displayMsg), "Cleared");
+            xQueueSend(uiQueue, &uiMsg, 0);
+        }
+
+        if (pinSubmitted) {
+            if (IRRemote_isPINCorrect()) {
+                msg.type  = EVENT_ACCESS_GRANTED;
+                msg.value = 0;
+            } else {
+                msg.type  = EVENT_ACCESS_DENIED;
+                msg.value = 0;
+            }
+            xQueueSend(sensorQueue, &msg, 0);
+        }
+
+        // Show digit count progress on LCD (e.g. "PIN: ** " )
+        uint8_t digits = IRRemote_getDigitCount();
+        if (digits > 0) {
+            uint8_t pinBuf[PIN_LENGTH];
+            IRRemote_getEnteredPIN(pinBuf, digits);
+            uiMsg.type = EVENT_DISPLAY_UPDATE;
+            char pinDisplay[PIN_LENGTH + 1];
+            for (uint8_t i = 0; i < digits; i++) {
+                pinDisplay[i] = '0' + pinBuf[i];
+            }
+            pinDisplay[digits] = '\0';
+            snprintf(uiMsg.displayMsg, sizeof(uiMsg.displayMsg), "PIN: %s", pinDisplay);
+            xQueueSend(uiQueue, &uiMsg, 0);
         }
 
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
@@ -300,6 +362,7 @@ void setup() {
     // Initialize modules
     PIR_init(PIR_PIN, LED_PIN);
     Ultrasonic_init(TRIG_PIN, ECHO_PIN);
+    IRRemote_init(IR_RECEIVE_PIN);
 
     // Create queues
     sensorQueue = xQueueCreate(10, sizeof(system_message_t));
@@ -326,6 +389,15 @@ void setup() {
         0); // Core 0
 
     xTaskCreatePinnedToCore(
+        IR_Task, 
+        "IR Task", 
+        4096, 
+        NULL, 
+        2, 
+        NULL, 
+        0);
+
+    xTaskCreatePinnedToCore(
         SecurityController_Task,
         "Security Controller",
         4096,
@@ -342,6 +414,7 @@ void setup() {
         1,
         NULL,
         1); // Core 1
+
 }
 
 void loop() {}
