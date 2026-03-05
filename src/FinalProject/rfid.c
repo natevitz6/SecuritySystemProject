@@ -21,27 +21,25 @@ void RFID_init(uint8_t ssPin, uint8_t rstPin) {
 bool RFID_update(void) {
     _authorized = false;
 
-    // No new card present
     if (!_mfrc522.PICC_IsNewCardPresent()) return false;
+    if (!_mfrc522.PICC_ReadCardSerial())   return false;
 
-    // Card present but couldn't read serial
-    if (!_mfrc522.PICC_ReadCardSerial()) return false;
-
-    // Compare scanned UID to authorized UID
     if (_mfrc522.uid.size == AUTHORIZED_UID_LEN) {
-        _authorized = true;
+        bool match1 = true;
+        bool match2 = true;
+
         for (uint8_t i = 0; i < AUTHORIZED_UID_LEN; i++) {
-            if (_mfrc522.uid.uidByte[i] != AUTHORIZED_UID[i] || _mfrc522.uid.uidByte[i] != AUTHORIZED_UID2[i]) {
-                _authorized = false;
-                break;
-            }
+            if (_mfrc522.uid.uidByte[i] != AUTHORIZED_UID[i])  match1 = false;
+            if (_mfrc522.uid.uidByte[i] != AUTHORIZED_UID2[i]) match2 = false;
         }
+
+        _authorized = match1 || match2;
     }
 
-    _mfrc522.PICC_HaltA();      // halt card
-    _mfrc522.PCD_StopCrypto1(); // stop encryption
+    _mfrc522.PICC_HaltA();
+    _mfrc522.PCD_StopCrypto1();
 
-    return true; // card was scanned (authorized or not)
+    return true;
 }
 
 bool RFID_isAuthorized(void) {
