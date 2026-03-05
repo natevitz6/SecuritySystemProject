@@ -13,6 +13,7 @@
 #define LOITER_DISTANCE_CM 100   // distance threshold for approach
 #define LOITER_TIME_MS 5000      // 5 seconds to detect loitering
 #define PIR_PIN 4
+#define PIN_LENGTH 4
 #define LED_PIN 13
 #define RED_LED_PIN   5    //solid = locked, blinking = alarm
 #define GREEN_LED_PIN 6 
@@ -61,7 +62,6 @@ typedef enum {
 typedef enum {
     STATE_IDLE,
     STATE_MOTION_DETECTED,
-    STATE_AWAITING_AUTH,
     STATE_DISARMED,
     STATE_ALARM
 } security_state_t;

@@ -1,5 +1,6 @@
 #include "rfid.h"
 #include <MFRC522.h>
+#include <SPI.h>
 
 // ── Configuration ────────────────────────────────────────────────
 // Replace these bytes with your actual keyfob's UID
@@ -13,7 +14,7 @@ static MFRC522 _mfrc522;
 static bool    _authorized = false;
 
 void RFID_init(uint8_t ssPin, uint8_t rstPin) {
-    SPI.begin();
+    SPI.begin(12, 13, 11, 10);
     _mfrc522 = MFRC522(ssPin, rstPin);
     _mfrc522.PCD_Init();
 }
