@@ -15,15 +15,6 @@
 #define PIR_PIN 2
 #define LED_PIN 13
 
-const uint8_t LCD_ADDR   = 0x27;
-const uint8_t RS_BIT     = 0x01;
-const uint8_t RW_BIT     = 0x02;
-const uint8_t E_BIT      = 0x04;
-const uint8_t BL_BIT     = 0x08;
-
-
-LiquidCrystal_I2C lcd(0x27, 16, 2);
-
 extern "C" {
   void PIR_init(uint8_t inputPin, uint8_t ledPin);
   void PIR_update(void);
@@ -34,104 +25,182 @@ extern "C" {
 
 }
 
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+// System Event Types
+typedef enum {
+    EVENT_PIR_MOTION,
+    EVENT_PIR_CLEAR,
+    EVENT_DISTANCE_UPDATE,
+    EVENT_LOITERING,
+    EVENT_DISPLAY_UPDATE
+} system_event_t;
+
+typedef struct {
+    system_event_t type;
+    int value;
+    char displayMsg[32]; // For display messages (if needed)
+} system_message_t;
+
+// Queues
+QueueHandle_t sensorQueue;
+QueueHandle_t uiQueue;
+
+void PIR_Task(void *pvParameters) {
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    const TickType_t xFrequency = pdMS_TO_TICKS(31); // ~32Hz
+
+    while (1) {
+        PIR_update();
+        system_message_t msg;
+
+        if (PIR_isMotionDetected()) {
+            msg.type = EVENT_PIR_MOTION;
+            msg.value = 1;
+            xQueueSend(sensorQueue, &msg, 0);
+        } else {
+            msg.type = EVENT_PIR_CLEAR;
+            msg.value = 0;
+            xQueueSend(sensorQueue, &msg, 0);
+        }
+
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+    }
+}
+
+void Ultrasonic_Task(void *pvParameters) {
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    const TickType_t xFrequency = pdMS_TO_TICKS(20); // 50Hz
+
+    while (1) {
+        Ultrasonic_update();
+
+        int dist = Ultrasonic_getDistance();
+
+        system_message_t msg;
+
+        // Send distance update
+        msg.type = EVENT_DISTANCE_UPDATE;
+        msg.value = dist;
+        xQueueSend(sensorQueue, &msg, 0);
+
+        // Check loitering
+        if (Ultrasonic_isLoitering(LOITER_DISTANCE_CM, LOITER_TIME_MS)) {
+            msg.type = EVENT_LOITERING;
+            msg.value = dist;
+            xQueueSend(sensorQueue, &msg, 0);
+        }
+
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+    }
+}
+
+void SecurityController_Task(void *pvParameters) {
+    system_message_t msg;
+    system_message_t uiMsg;
+
+    while (1) {
+        if (xQueueReceive(sensorQueue, &msg, portMAX_DELAY)) {
+            switch (msg.type) {
+                case EVENT_PIR_MOTION:
+                    // Example: Show "Enter PIN" when motion detected
+                    uiMsg.type = EVENT_DISPLAY_UPDATE;
+                    snprintf(uiMsg.displayMsg, sizeof(uiMsg.displayMsg), "Enter PIN:");
+                    xQueueSend(uiQueue, &uiMsg, 0);
+                    break;
+
+                case EVENT_PIR_CLEAR:
+                    // Example: Show "Idle" when no motion
+                    uiMsg.type = EVENT_DISPLAY_UPDATE;
+                    snprintf(uiMsg.displayMsg, sizeof(uiMsg.displayMsg), "Idle");
+                    xQueueSend(uiQueue, &uiMsg, 0);
+                    break;
+
+                case EVENT_DISTANCE_UPDATE:
+                    break;
+
+                case EVENT_LOITERING: // add alarm being set off with LED
+                    uiMsg.type = EVENT_DISPLAY_UPDATE;
+                    snprintf(uiMsg.displayMsg, sizeof(uiMsg.displayMsg), "Loitering Detected");
+                    xQueueSend(uiQueue, &uiMsg, 0);
+                    break;
+
+                default:
+                    break;
+            }
+        }
+    }
+}
+
+// LCD/UI Task: Handles all display updates
+void LCD_Task(void *pvParameters) {
+    system_message_t uiMsg;
+    char lastMsg[32] = "";
+    while (1) {
+        if (xQueueReceive(uiQueue, &uiMsg, portMAX_DELAY)) {
+            if (uiMsg.type == EVENT_DISPLAY_UPDATE) {
+                if (strcmp(lastMsg, uiMsg.displayMsg) != 0) {
+                    lcd.clear();
+                    lcd.setCursor(0, 0);
+                    lcd.print(uiMsg.displayMsg);
+                    strncpy(lastMsg, uiMsg.displayMsg, sizeof(lastMsg));
+                }
+            }
+        }
+    }
+}
+
 void setup() {
-    Serial.begin(9600);        // Initialize serial monitor
-    PIR_init(PIR_PIN, LED_PIN); // Initialize PIR module
-    Ultrasonic_init(TRIG_PIN, ECHO_PIN);
-    Wire.setPins(47, 48);
+    Serial.begin(115200);
+
     Wire.begin();
     lcd.init();
+    lcd.backlight();
+
+    // Initialize modules
+    PIR_init(PIR_PIN, LED_PIN);
+    Ultrasonic_init(TRIG_PIN, ECHO_PIN);
+
+    // Create queues
+    sensorQueue = xQueueCreate(10, sizeof(system_message_t));
+    uiQueue     = xQueueCreate(10, sizeof(system_message_t));
+
+    // Create tasks pinned to cores
+    xTaskCreatePinnedToCore(
+        PIR_Task,
+        "PIR Task",
+        4096,
+        NULL,
+        2,
+        NULL,
+        0); // Core 0
+
+    xTaskCreatePinnedToCore(
+        Ultrasonic_Task,
+        "Ultrasonic Task",
+        4096,
+        NULL,
+        3,
+        NULL,
+        0); // Core 0
+
+    xTaskCreatePinnedToCore(
+        SecurityController_Task,
+        "Security Controller",
+        4096,
+        NULL,
+        1,
+        NULL,
+        1); // Core 1
+
+    xTaskCreatePinnedToCore(
+        LCD_Task,
+        "LCD Task",
+        4096,
+        NULL,
+        1,
+        NULL,
+        1); // Core 1
 }
 
-void loop() {
-    PIR_update();              // Update PIR sensor state
-
-    // Optional: check state
-    if (PIR_isMotionDetected()) {
-        // For testing, print repeatedly
-        Serial.println("Motion is currently detected!");
-    }
-
-    delay(500);  // Half-second delay to slow serial output for readability
-
-    Ultrasonic_update();
-
-    int dist = Ultrasonic_getDistance();
-    Serial.print("Current distance: ");
-    Serial.println(dist);
-
-    if (Ultrasonic_isLoitering(LOITER_DISTANCE_CM, LOITER_TIME_MS))
-    {
-        Serial.println("Loitering detected! Show 'Enter PIN' on display.");
-        // TODO: trigger display message in your security system
-    }
-
-    delay(50); // small delay for sensor stability
-}
-
-
-/**
-* @brief Sends a raw byte to the LCD over I2C.
-* @param value Byte to transmit.
-* @return None
-*/
-void lcd_write_raw(uint8_t value) {
- Wire.beginTransmission(LCD_ADDR);
- Wire.write(value);
- Wire.endTransmission();
- delayMicroseconds(40);
-}
-
-/**
-* @brief Pulses a 4-bit nibble to the LCD.
-* @param nibble Upper 4 bits of data.
-* @param control Control bits (RS, RW, BL).
-*/
-void lcd_pulse_nibble(uint8_t nibble, uint8_t control) {
- uint8_t out = (nibble & 0xF0) | control;
- lcd_write_raw(out | E_BIT);
- lcd_write_raw(out & ~E_BIT);
-}
-
-/**
-* @brief Sends a command byte to the LCD.
-* @param cmd Command byte.
-*/
-void lcd_command(uint8_t cmd) {
- uint8_t control = BL_BIT;
- lcd_pulse_nibble(cmd & 0xF0, control);
- lcd_pulse_nibble((cmd << 4) & 0xF0, control);
- delayMicroseconds(1600);
-}
-
-/**
-* @brief Sends character data to the LCD.
-* @param data ASCII character to display.
-*/
-void lcd_data(uint8_t data) {
- uint8_t control = BL_BIT | RS_BIT;
- lcd_pulse_nibble(data & 0xF0, control);
- lcd_pulse_nibble((data << 4) & 0xF0, control);
-}
-
-/**
-* @brief Clears the LCD display.
-*/
-void lcd_clear() {
- lcd_command(0x01);
- delay(2);
-}
-
-/**
-* @brief Moves cursor to first LCD line.
-*/
-void lcd_home_first_line() {
- lcd_command(0x80);
-}
-
-/**
-* @brief Moves cursor to second LCD line.
-*/
-void lcd_second_line() {
- lcd_command(0xC0);
-}
+void loop() {}
