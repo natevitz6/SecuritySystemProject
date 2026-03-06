@@ -1,5 +1,5 @@
 #include "ir_remote.h"
-#include <IRremote.h>
+#include <IRremote.hpp>
 
 // ── Configuration ────────────────────────────────────────────────
 #define PIN_LENGTH 4
@@ -7,7 +7,7 @@ static const uint8_t CORRECT_PIN[PIN_LENGTH] = {1, 2, 3, 4}; // change to your P
 
 // ── Replace these with your actual hex codes from IRTest.ino ─────
 #define IR_CODE_0    0x19
-#define IR_CODE_1    0x45 
+#define IR_CODE_1    0x45
 #define IR_CODE_2    0x46
 #define IR_CODE_3    0x47 
 #define IR_CODE_4    0x44 

@@ -6,6 +6,8 @@
 #include <freertos/semphr.h>
 #include "pir.h"
 #include "ultrasonic.h"
+#include "rfid.h"
+#include "ir_remote.h"
 
 // Define pins
 #define TRIG_PIN 2
@@ -14,7 +16,7 @@
 #define LOITER_TIME_MS 5000      // 5 seconds to detect loitering
 #define PIR_PIN 4
 #define PIN_LENGTH 4
-#define LED_PIN 13
+#define LED_PIN 7
 #define RED_LED_PIN   5    //solid = locked, blinking = alarm
 #define GREEN_LED_PIN 6 
 #define IR_RECEIVE_PIN 15
@@ -110,26 +112,6 @@ void SecurityController_Task(void *pvParameters) {
                         snprintf(uiMsg.displayMsg, sizeof(uiMsg.displayMsg), "Idle");
                         xQueueSend(uiQueue, &uiMsg, 0);
                     } else if (msg.type == EVENT_ACCESS_GRANTED) {
-                        state = STATE_DISARMED;
-                        uiMsg.type = EVENT_DISPLAY_UPDATE;
-                        snprintf(uiMsg.displayMsg, sizeof(uiMsg.displayMsg), "Access Granted!");
-                        xQueueSend(uiQueue, &uiMsg, 0);
-                        alarmMsg.type = EVENT_ACCESS_GRANTED;
-                        xQueueSend(alarmQueue, &alarmMsg, 0);
-                    } else if (msg.type == EVENT_ACCESS_DENIED) {
-                        state = STATE_ALARM;
-                        uiMsg.type = EVENT_DISPLAY_UPDATE;
-                        snprintf(uiMsg.displayMsg, sizeof(uiMsg.displayMsg), "Access Denied!");
-                        xQueueSend(uiQueue, &uiMsg, 0);
-                        alarmMsg.type = EVENT_ALARM_TRIGGER;
-                        xQueueSend(alarmQueue, &alarmMsg, 0);
-                    }
-                    break;
-
-                case STATE_AWAITING_AUTH:
-                    // Placeholder — RFID task will post ACCESS_GRANTED or ACCESS_DENIED
-                    // which will arrive here and be handled identically to MOTION_DETECTED
-                    if (msg.type == EVENT_ACCESS_GRANTED) {
                         state = STATE_DISARMED;
                         uiMsg.type = EVENT_DISPLAY_UPDATE;
                         snprintf(uiMsg.displayMsg, sizeof(uiMsg.displayMsg), "Access Granted!");
