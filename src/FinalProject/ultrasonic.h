@@ -6,6 +6,8 @@ extern "C" {
 #endif
 
 #include <Arduino.h>
+#include <stdint.h>
+
 // Initialize ultrasonic sensor pins
 void Ultrasonic_init(uint8_t trigPin, uint8_t echoPin);
 
