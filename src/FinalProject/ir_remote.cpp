@@ -1,5 +1,12 @@
 #include "ir_remote.h"
 #include <IRremote.hpp>
+#include "esp_timer.h"  // for esp_timer_get_time()
+
+#define IR_COOLDOWN_MS 300  // ignore repeated codes within 300ms
+
+// add this to the private state section:
+static uint32_t _lastCommandTime = 0;  // ms timestamp of last accepted command
+static uint8_t  _lastCode        = 0xFF; // last accepted code
 
 // ── Configuration ────────────────────────────────────────────────
 #define PIN_LENGTH 4
@@ -53,32 +60,36 @@ bool IRRemote_update(void) {
     _pinReady     = false;
     _clearPressed = false;
 
-    if (!IrReceiver.decode()) {
-        return false; // nothing received this cycle
-    }
+    if (!IrReceiver.decode()) return false;
 
     uint8_t code = IrReceiver.decodedIRData.command;
     IrReceiver.resume();
 
+    // --- Debounce: reject repeated identical codes within the cooldown window ---
+    uint32_t now = (uint32_t)(esp_timer_get_time() / 1000ULL); // convert µs → ms
+    bool isRepeat = (code == _lastCode) && 
+                    ((now - _lastCommandTime) < IR_COOLDOWN_MS);
+
+    if (isRepeat) return false;  // swallow the repeat
+
+    _lastCode        = code;
+    _lastCommandTime = now;
+    // --- end debounce ---
+
     if (code == IR_CODE_CLR) {
-        // Clear button — reset entry
         _digitCount   = 0;
         _clearPressed = true;
         return false;
     }
-
     if (code == IR_CODE_OK) {
-        // Confirm button — mark PIN as ready for evaluation
         _pinReady = true;
         return true;
     }
 
-    // Try to decode as a digit
     uint8_t digit = decodeDigit(code);
     if (digit != 255 && _digitCount < PIN_LENGTH) {
         _enteredPIN[_digitCount++] = digit;
     }
-
     return false;
 }
 

@@ -8,6 +8,7 @@
 #include "ultrasonic.h"
 #include "rfid.h"
 #include "ir_remote.h"
+#include "countdown.h"
 
 // Define pins
 #define TRIG_PIN 2
@@ -25,6 +26,8 @@
 #define SCK_PIN 12
 #define MOSI_PIN 11
 #define MISO_PIN 13
+#define ALARM_GRACE_PERIOD_MS 10000  // 10 seconds
+#define EXIT_COOLDOWN_MS 5000
 
 extern "C" {
     void PIR_init(uint8_t inputPin, uint8_t ledPin);
@@ -79,8 +82,17 @@ typedef enum {
 typedef struct {
     system_event_t type;
     int value;
-    char displayMsg[32]; // For display messages (if needed)
+    char displayLine0[17];  // 16 chars + null terminator
+    char displayLine1[17];
 } system_message_t;
+
+#define LCD_MSG(msg, l0, l1) do { \
+    (msg).type = EVENT_DISPLAY_UPDATE; \
+    strncpy((msg).displayLine0, (l0), 16); \
+    strncpy((msg).displayLine1, (l1), 16); \
+    (msg).displayLine0[16] = '\0'; \
+    (msg).displayLine1[16] = '\0'; \
+} while(0)
 
 // Queues
 QueueHandle_t sensorQueue;
@@ -98,17 +110,32 @@ void SecurityController_Task(void *pvParameters) {
     system_message_t uiMsg;
     system_message_t alarmMsg;
     security_state_t state = STATE_IDLE;
-    countdown_cmd_t  cdCmd
+    countdown_cmd_t  cdCmd;
+    bool     exitCooldownActive  = false;
+    uint32_t exitCooldownStartMs = 0;
 
     while (1) {
-        if (xQueueReceive(sensorQueue, &msg, portMAX_DELAY)) {
+        if (exitCooldownActive && state == STATE_DISARMED) {
+            uint32_t now = (uint32_t)(esp_timer_get_time() / 1000ULL);
+            if ((now - exitCooldownStartMs) >= EXIT_COOLDOWN_MS) {
+                exitCooldownActive = false;
+                state = STATE_IDLE;
+                LCD_MSG(uiMsg, "  SYSTEM ARMED  ", " Scan or Enter  ");
+                xQueueSend(uiQueue, &uiMsg, 0);
+                alarmMsg.type = EVENT_ACCESS_DENIED;
+                xQueueSend(alarmQueue, &alarmMsg, 0);
+            }
+        }
+
+        // Use a short timeout instead of portMAX_DELAY so the cooldown check
+        // above gets to run even when no messages are arriving
+        if (xQueueReceive(sensorQueue, &msg, pdMS_TO_TICKS(100))) {
             switch (state) {
 
                 case STATE_IDLE:
                     if (msg.type == EVENT_PIR_MOTION) {
                         state = STATE_MOTION_DETECTED;
-                        uiMsg.type = EVENT_DISPLAY_UPDATE;
-                        snprintf(uiMsg.displayMsg, sizeof(uiMsg.displayMsg), "Motion Detected");
+                        LCD_MSG(uiMsg, " Motion Detected", "Scan/PIN to Dsrm");
                         xQueueSend(uiQueue, &uiMsg, 0);
                     }
                     break;
@@ -116,83 +143,77 @@ void SecurityController_Task(void *pvParameters) {
                 case STATE_MOTION_DETECTED:
                     if (msg.type == EVENT_LOITERING) {
                         state = STATE_ALARM;
-                        uiMsg.type = EVENT_DISPLAY_UPDATE;
-                        snprintf(uiMsg.displayMsg, sizeof(uiMsg.displayMsg), "Loitering Detected");
+                        LCD_MSG(uiMsg, "!!! ALARM !!!   ", "Scan/PIN:Silence");
                         xQueueSend(uiQueue, &uiMsg, 0);
                         alarmMsg.type = EVENT_ALARM_TRIGGER;
                         xQueueSend(alarmQueue, &alarmMsg, 0);
                     } else if (msg.type == EVENT_PIR_CLEAR) {
                         state = STATE_IDLE;
-                        uiMsg.type = EVENT_DISPLAY_UPDATE;
-                        snprintf(uiMsg.displayMsg, sizeof(uiMsg.displayMsg), "Idle");
+                        LCD_MSG(uiMsg, "  SYSTEM ARMED  ", " Scan or Enter  ");
                         xQueueSend(uiQueue, &uiMsg, 0);
                     } else if (msg.type == EVENT_ACCESS_GRANTED) {
                         state = STATE_DISARMED;
-                        uiMsg.type = EVENT_DISPLAY_UPDATE;
-                        snprintf(uiMsg.displayMsg, sizeof(uiMsg.displayMsg), "Access Granted!");
+                        exitCooldownActive = false;
+                        LCD_MSG(uiMsg, " Access Granted!", "  Welcome Back  ");
                         xQueueSend(uiQueue, &uiMsg, 0);
                         alarmMsg.type = EVENT_ACCESS_GRANTED;
                         xQueueSend(alarmQueue, &alarmMsg, 0);
                     } else if (msg.type == EVENT_ACCESS_DENIED) {
-                        // Start grace period instead of immediately triggering alarm
                         state = STATE_ALARM_PENDING;
                         cdCmd = CMD_COUNTDOWN_START;
                         xQueueSend(countdownQueue, &cdCmd, 0);
-                        // LCD message sent by Countdown_Task with live seconds
+                        // Countdown_Task will take over the LCD from here
                     }
                     break;
 
                 case STATE_DISARMED:
                     if (msg.type == EVENT_PIR_CLEAR) {
-                        state = STATE_IDLE;
-                        uiMsg.type = EVENT_DISPLAY_UPDATE;
-                        snprintf(uiMsg.displayMsg, sizeof(uiMsg.displayMsg), "Idle");
+                        exitCooldownActive  = true;
+                        exitCooldownStartMs = (uint32_t)(esp_timer_get_time() / 1000ULL);
+                        LCD_MSG(uiMsg, " Access Granted!", "   Goodbye!     ");
                         xQueueSend(uiQueue, &uiMsg, 0);
-                        alarmMsg.type = EVENT_ACCESS_DENIED; // turn off green LED
-                        xQueueSend(alarmQueue, &alarmMsg, 0);
+                    } else if (msg.type == EVENT_PIR_MOTION) {
+                        exitCooldownActive = false;
+                        LCD_MSG(uiMsg, " Access Granted!", "  Welcome Back  ");
+                        xQueueSend(uiQueue, &uiMsg, 0);
                     }
                     break;
 
                 case STATE_ALARM:
                     if (msg.type == EVENT_ACCESS_GRANTED) {
                         state = STATE_IDLE;
-                        uiMsg.type = EVENT_DISPLAY_UPDATE;
-                        snprintf(uiMsg.displayMsg, sizeof(uiMsg.displayMsg), "System Disarmed");
+                        exitCooldownActive = false;
+                        LCD_MSG(uiMsg, " System Disarmed", "  Welcome Back  ");
                         xQueueSend(uiQueue, &uiMsg, 0);
                         alarmMsg.type = EVENT_ALARM_CLEAR;
                         xQueueSend(alarmQueue, &alarmMsg, 0);
                     } else if (msg.type == EVENT_ALARM_CLEAR) {
                         state = STATE_IDLE;
-                        uiMsg.type = EVENT_DISPLAY_UPDATE;
-                        snprintf(uiMsg.displayMsg, sizeof(uiMsg.displayMsg), "Admin Override");
+                        exitCooldownActive = false;
+                        LCD_MSG(uiMsg, " Admin Override ", "System Disarmed ");
                         xQueueSend(uiQueue, &uiMsg, 0);
                         alarmMsg.type = EVENT_ALARM_CLEAR;
                         xQueueSend(alarmQueue, &alarmMsg, 0);
                     }
                     break;
-                
+
                 case STATE_ALARM_PENDING:
                     if (msg.type == EVENT_ACCESS_GRANTED) {
-                        // Disarmed in time — cancel countdown and go to disarmed
                         state = STATE_DISARMED;
+                        exitCooldownActive = false;
                         cdCmd = CMD_COUNTDOWN_CANCEL;
                         xQueueSend(countdownQueue, &cdCmd, 0);
-                        uiMsg.type = EVENT_DISPLAY_UPDATE;
-                        snprintf(uiMsg.displayMsg, sizeof(uiMsg.displayMsg), "Access Granted!");
+                        LCD_MSG(uiMsg, " Access Granted!", "  Welcome Back  ");
                         xQueueSend(uiQueue, &uiMsg, 0);
                         alarmMsg.type = EVENT_ACCESS_GRANTED;
                         xQueueSend(alarmQueue, &alarmMsg, 0);
-
                     } else if (msg.type == EVENT_COUNTDOWN_EXPIRED) {
-                        // Grace period over — trigger alarm
                         state = STATE_ALARM;
+                        LCD_MSG(uiMsg, "!!! ALARM !!!   ", "Scan/PIN:Silence");
+                        xQueueSend(uiQueue, &uiMsg, 0);
                         alarmMsg.type = EVENT_ALARM_TRIGGER;
                         xQueueSend(alarmQueue, &alarmMsg, 0);
-                        uiMsg.type = EVENT_DISPLAY_UPDATE;
-                        snprintf(uiMsg.displayMsg, sizeof(uiMsg.displayMsg), "ALARM TRIGGERED");
-                        xQueueSend(uiQueue, &uiMsg, 0);
                     }
-                    // Intentionally ignore PIR_CLEAR here per design decision
                     break;
             }
         }
@@ -201,19 +222,19 @@ void SecurityController_Task(void *pvParameters) {
 
 void PIR_Task(void *pvParameters) {
     TickType_t xLastWakeTime = xTaskGetTickCount();
-    const TickType_t xFrequency = pdMS_TO_TICKS(31); // ~32Hz
+    const TickType_t xFrequency = pdMS_TO_TICKS(31);
+    bool lastState = false;  // track previous stable state
 
     while (1) {
         PIR_update();
-        system_message_t msg;
+        bool currentState = PIR_isMotionDetected();
 
-        if (PIR_isMotionDetected()) {
-            msg.type = EVENT_PIR_MOTION;
-            msg.value = 1;
-            xQueueSend(sensorQueue, &msg, 0);
-        } else {
-            msg.type = EVENT_PIR_CLEAR;
-            msg.value = 0;
+        // Only send a message when the state actually changes
+        if (currentState != lastState) {
+            lastState = currentState;
+            system_message_t msg;
+            msg.type  = currentState ? EVENT_PIR_MOTION : EVENT_PIR_CLEAR;
+            msg.value = currentState ? 1 : 0;
             xQueueSend(sensorQueue, &msg, 0);
         }
 
@@ -227,15 +248,9 @@ void Ultrasonic_Task(void *pvParameters) {
 
     while (1) {
         Ultrasonic_update();
-
         int dist = Ultrasonic_getDistance();
 
         system_message_t msg;
-
-        // Send distance update
-        msg.type = EVENT_DISTANCE_UPDATE;
-        msg.value = dist;
-        xQueueSend(sensorQueue, &msg, 0);
 
         // Check loitering
         if (Ultrasonic_isLoitering(LOITER_DISTANCE_CM, LOITER_TIME_MS)) {
@@ -279,15 +294,19 @@ void IR_Task(void *pvParameters) {
         // Show digit count progress on LCD (e.g. "PIN: ** " )
         uint8_t digits = IRRemote_getDigitCount();
         if (digits > 0) {
-            uint8_t pinBuf[PIN_LENGTH];
-            IRRemote_getEnteredPIN(pinBuf, digits);
-            uiMsg.type = EVENT_DISPLAY_UPDATE;
-            char pinDisplay[PIN_LENGTH + 1];
+            system_message_t uiMsg;
+            char pinDisplay[17] = "PIN:            ";
             for (uint8_t i = 0; i < digits; i++) {
-                pinDisplay[i] = '0' + pinBuf[i];
+                pinDisplay[5 + i] = '*';  // mask with stars, starting at position 5
             }
-            pinDisplay[digits] = '\0';
-            snprintf(uiMsg.displayMsg, sizeof(uiMsg.displayMsg), "PIN: %s", pinDisplay);
+            LCD_MSG(uiMsg, "  Enter PIN:    ", pinDisplay);
+            xQueueSend(uiQueue, &uiMsg, 0);
+        }
+
+        // Clear pressed
+        if (IRRemote_wasClearPressed()) {
+            system_message_t uiMsg;
+            LCD_MSG(uiMsg, "  Enter PIN:    ", "PIN: Cleared    ");
             xQueueSend(uiQueue, &uiMsg, 0);
         }
 
@@ -307,15 +326,9 @@ void RFID_Task(void *pvParameters) {
             system_message_t uiMsg;
 
             if (RFID_isAuthorized()) {
-                msg.type  = EVENT_ACCESS_GRANTED;
-                msg.value = 0;
-                uiMsg.type = EVENT_DISPLAY_UPDATE;
-                snprintf(uiMsg.displayMsg, sizeof(uiMsg.displayMsg), "Access Granted!");
+                LCD_MSG(uiMsg, " Access Granted!", "  Welcome Back  ");
             } else {
-                msg.type  = EVENT_ACCESS_DENIED;
-                msg.value = 0;
-                uiMsg.type = EVENT_DISPLAY_UPDATE;
-                snprintf(uiMsg.displayMsg, sizeof(uiMsg.displayMsg), "Access Denied!");
+                LCD_MSG(uiMsg, " Access Denied! ", " Try Again...   ");
             }
 
             xQueueSend(sensorQueue, &msg, 0);
@@ -329,15 +342,24 @@ void RFID_Task(void *pvParameters) {
 // LCD/UI Task: Handles all display updates
 void LCD_Task(void *pvParameters) {
     system_message_t uiMsg;
-    char lastMsg[32] = "";
+    char lastLine0[17] = "";
+    char lastLine1[17] = "";
+
     while (1) {
         if (xQueueReceive(uiQueue, &uiMsg, portMAX_DELAY)) {
             if (uiMsg.type == EVENT_DISPLAY_UPDATE) {
-                if (strcmp(lastMsg, uiMsg.displayMsg) != 0) {
+                // Only redraw if something actually changed
+                if (strcmp(lastLine0, uiMsg.displayLine0) != 0 ||
+                    strcmp(lastLine1, uiMsg.displayLine1) != 0) {
+
                     lcd.clear();
                     lcd.setCursor(0, 0);
-                    lcd.print(uiMsg.displayMsg);
-                    strncpy(lastMsg, uiMsg.displayMsg, sizeof(lastMsg));
+                    lcd.print(uiMsg.displayLine0);
+                    lcd.setCursor(0, 1);
+                    lcd.print(uiMsg.displayLine1);
+
+                    strncpy(lastLine0, uiMsg.displayLine0, sizeof(lastLine0));
+                    strncpy(lastLine1, uiMsg.displayLine1, sizeof(lastLine1));
                 }
             }
         }
@@ -428,20 +450,20 @@ void Countdown_Task(void *pvParameters) {
         if (counting) {
             uint32_t secsLeft = Countdown_getSecondsRemaining();
 
-            // Send LCD update once per second (when the second value changes)
             if (secsLeft != lastSecond) {
                 lastSecond = secsLeft;
-                uiMsg.type = EVENT_DISPLAY_UPDATE;
-                snprintf(uiMsg.displayMsg, sizeof(uiMsg.displayMsg),
-                         "Disarm! %lus left", (unsigned long)secsLeft);
+                system_message_t uiMsg;
+                LCD_MSG(uiMsg, "!! DISARM NOW !!", "                ");
+                // Overwrite line 1 with the live second count + disarm hint
+                snprintf(uiMsg.displayLine1, sizeof(uiMsg.displayLine1),
+                        "Scan/PIN %2lus left", (unsigned long)secsLeft);
                 xQueueSend(uiQueue, &uiMsg, 0);
             }
 
-            // Check for expiry
             if (Countdown_hasExpired()) {
                 counting = false;
-                uiMsg.type = EVENT_DISPLAY_UPDATE;
-                snprintf(uiMsg.displayMsg, sizeof(uiMsg.displayMsg), "ALARM!");
+                system_message_t uiMsg;
+                LCD_MSG(uiMsg, "!!! ALARM !!!   ", "Scan/PIN:Silence");
                 xQueueSend(uiQueue, &uiMsg, 0);
                 xQueueSend(sensorQueue, &expiredMsg, 0);
             }
@@ -456,6 +478,10 @@ void setup() {
     Wire.begin();
     lcd.init();
     lcd.backlight();
+    lcd.setCursor(0, 0);
+    lcd.print("  SYSTEM ARMED  ");
+    lcd.setCursor(0, 1);
+    lcd.print(" Scan or Enter  ");
 
     pinMode(RED_LED_PIN,   OUTPUT);
     pinMode(GREEN_LED_PIN, OUTPUT);

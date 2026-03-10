@@ -11,8 +11,9 @@ static uint8_t _trigPin;
 static uint8_t _echoPin;
 static long _duration;
 static int _distance;
-static unsigned long _approachStartTime = 0;
 static bool _wasClose = false;
+static uint32_t _approachStartTick = 0;
+static uint32_t _readTimer(void); // forward declaration
 
 void Ultrasonic_init(uint8_t trigPin, uint8_t echoPin) {
     _trigPin = trigPin;
@@ -48,8 +49,7 @@ int Ultrasonic_getDistance(void) {
     return _distance;
 }
 
-bool Ultrasonic_isLoitering(int distanceThresholdCm, unsigned long timeLimitMs)
-{
+bool Ultrasonic_isLoitering(int distanceThresholdCm, unsigned long timeLimitMs) {
     uint32_t currentTick  = _readTimer();
     uint32_t limitTicks   = (uint32_t)MS_TO_TICKS(timeLimitMs);
 
@@ -70,8 +70,7 @@ bool Ultrasonic_isLoitering(int distanceThresholdCm, unsigned long timeLimitMs)
     return false;
 }
 
-static uint32_t _readTimer(void)
-{
+static uint32_t _readTimer(void) {
     *((volatile uint32_t *)TIMG_T0UPDATE_REG(0)) = 1;
     return *((volatile uint32_t *)TIMG_T0LO_REG(0));
 }
