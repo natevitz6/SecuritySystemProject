@@ -140,6 +140,22 @@ typedef struct {
     (msg).displayLine1[16] = '\0'; \
 } while(0)
 
+/**
+ * @brief Prints a two-line LCD message to the Serial monitor.
+ *
+ * Mirrors every LCD display update to the serial console so that system
+ * state changes can be observed without a physical LCD attached. Output
+ * format is a divider line followed by the two display rows.
+ *
+ * @param l0  String for LCD row 0 (the same value passed to LCD_MSG).
+ * @param l1  String for LCD row 1 (the same value passed to LCD_MSG).
+ */
+#define SERIAL_MSG(l0, l1) do { \
+    Serial.println("----------------"); \
+    Serial.println(l0); \
+    Serial.println(l1); \
+} while(0)
+
 // Forward declarations for C-linkage driver functions
 extern "C" {
     void PIR_init(uint8_t inputPin, uint8_t ledPin);
@@ -198,6 +214,7 @@ void SecurityController_Task(void *pvParameters) {
                 exitCooldownActive = false;
                 state = STATE_IDLE;
                 LCD_MSG(uiMsg, "  SYSTEM ARMED  ", " Scan or Enter  ");
+                SERIAL_MSG("  SYSTEM ARMED  ", " Scan or Enter  ");
                 xQueueSend(uiQueue, &uiMsg, 0);
                 alarmMsg.type = EVENT_ACCESS_DENIED;
                 xQueueSend(alarmQueue, &alarmMsg, 0);
@@ -212,6 +229,7 @@ void SecurityController_Task(void *pvParameters) {
                     if (msg.type == EVENT_PIR_MOTION) {
                         state = STATE_MOTION_DETECTED;
                         LCD_MSG(uiMsg, " Motion Detected", "Scan/PIN to Dsrm");
+                        SERIAL_MSG(" Motion Detected", "Scan/PIN to Dsrm");
                         xQueueSend(uiQueue, &uiMsg, 0);
                     }
                     break;
@@ -220,17 +238,20 @@ void SecurityController_Task(void *pvParameters) {
                     if (msg.type == EVENT_LOITERING) {
                         state = STATE_ALARM;
                         LCD_MSG(uiMsg, "!!! ALARM !!!   ", "Scan/PIN:Silence");
+                        SERIAL_MSG("!!! ALARM !!!   ", "Scan/PIN:Silence");
                         xQueueSend(uiQueue, &uiMsg, 0);
                         alarmMsg.type = EVENT_ALARM_TRIGGER;
                         xQueueSend(alarmQueue, &alarmMsg, 0);
                     } else if (msg.type == EVENT_PIR_CLEAR) {
                         state = STATE_IDLE;
                         LCD_MSG(uiMsg, "  SYSTEM ARMED  ", " Scan or Enter  ");
+                        SERIAL_MSG("  SYSTEM ARMED  ", " Scan or Enter  ");
                         xQueueSend(uiQueue, &uiMsg, 0);
                     } else if (msg.type == EVENT_ACCESS_GRANTED) {
                         state = STATE_DISARMED;
                         exitCooldownActive = false;
                         LCD_MSG(uiMsg, " Access Granted!", "  Welcome Back  ");
+                        SERIAL_MSG(" Access Granted!", "  Welcome Back  ");
                         xQueueSend(uiQueue, &uiMsg, 0);
                         alarmMsg.type = EVENT_ACCESS_GRANTED;
                         xQueueSend(alarmQueue, &alarmMsg, 0);
@@ -246,10 +267,12 @@ void SecurityController_Task(void *pvParameters) {
                         exitCooldownActive  = true;
                         exitCooldownStartMs = (uint32_t)(esp_timer_get_time() / 1000ULL);
                         LCD_MSG(uiMsg, " Access Granted!", "   Goodbye!     ");
+                        SERIAL_MSG(" Access Granted!", "   Goodbye!     ");
                         xQueueSend(uiQueue, &uiMsg, 0);
                     } else if (msg.type == EVENT_PIR_MOTION) {
                         exitCooldownActive = false;
                         LCD_MSG(uiMsg, " Access Granted!", "  Welcome Back  ");
+                        SERIAL_MSG(" Access Granted!", "  Welcome Back  ");
                         xQueueSend(uiQueue, &uiMsg, 0);
                     }
                     break;
@@ -259,6 +282,7 @@ void SecurityController_Task(void *pvParameters) {
                         state = STATE_IDLE;
                         exitCooldownActive = false;
                         LCD_MSG(uiMsg, " System Disarmed", "  Welcome Back  ");
+                        SERIAL_MSG(" System Disarmed", "  Welcome Back  ");
                         xQueueSend(uiQueue, &uiMsg, 0);
                         alarmMsg.type = EVENT_ALARM_CLEAR;
                         xQueueSend(alarmQueue, &alarmMsg, 0);
@@ -266,6 +290,7 @@ void SecurityController_Task(void *pvParameters) {
                         state = STATE_IDLE;
                         exitCooldownActive = false;
                         LCD_MSG(uiMsg, " Admin Override ", "System Disarmed ");
+                        SERIAL_MSG(" Admin Override ", "System Disarmed ");
                         xQueueSend(uiQueue, &uiMsg, 0);
                         alarmMsg.type = EVENT_ALARM_CLEAR;
                         xQueueSend(alarmQueue, &alarmMsg, 0);
@@ -279,12 +304,14 @@ void SecurityController_Task(void *pvParameters) {
                         cdCmd = CMD_COUNTDOWN_CANCEL;
                         xQueueSend(countdownQueue, &cdCmd, 0);
                         LCD_MSG(uiMsg, " Access Granted!", "  Welcome Back  ");
+                        SERIAL_MSG(" Access Granted!", "  Welcome Back  ");
                         xQueueSend(uiQueue, &uiMsg, 0);
                         alarmMsg.type = EVENT_ACCESS_GRANTED;
                         xQueueSend(alarmQueue, &alarmMsg, 0);
                     } else if (msg.type == EVENT_COUNTDOWN_EXPIRED) {
                         state = STATE_ALARM;
                         LCD_MSG(uiMsg, "!!! ALARM !!!   ", "Scan/PIN:Silence");
+                        SERIAL_MSG("!!! ALARM !!!   ", "Scan/PIN:Silence");
                         xQueueSend(uiQueue, &uiMsg, 0);
                         alarmMsg.type = EVENT_ALARM_TRIGGER;
                         xQueueSend(alarmQueue, &alarmMsg, 0);
@@ -384,11 +411,13 @@ void IR_Task(void *pvParameters) {
                 pinDisplay[5 + i] = '*';
             }
             LCD_MSG(uiMsg, "  Enter PIN:    ", pinDisplay);
+            SERIAL_MSG("  Enter PIN:    ", pinDisplay);
             xQueueSend(uiQueue, &uiMsg, 0);
         }
 
         if (IRRemote_wasClearPressed()) {
             LCD_MSG(uiMsg, "  Enter PIN:    ", "PIN: Cleared    ");
+            SERIAL_MSG("  Enter PIN:    ", "PIN: Cleared    ");
             xQueueSend(uiQueue, &uiMsg, 0);
         }
 
@@ -418,8 +447,10 @@ void RFID_Task(void *pvParameters) {
 
             if (RFID_isAuthorized()) {
                 LCD_MSG(uiMsg, " Access Granted!", "  Welcome Back  ");
+                SERIAL_MSG(" Access Granted!", "  Welcome Back  ");
             } else {
                 LCD_MSG(uiMsg, " Access Denied! ", " Try Again...   ");
+                SERIAL_MSG(" Access Denied! ", " Try Again...   ");
             }
 
             xQueueSend(sensorQueue, &msg, 0);
@@ -434,6 +465,7 @@ void RFID_Task(void *pvParameters) {
  * @brief Receives display messages and updates the I2C LCD.
  *
  * Only redraws when the content has actually changed to minimize I2C traffic.
+ * Mirrors every accepted display update to the Serial monitor as well.
  * Blocks indefinitely on uiQueue when idle. Pinned to Core 1. Priority 1.
  *
  * @param pvParameters  Unused FreeRTOS task parameter.
@@ -454,6 +486,12 @@ void LCD_Task(void *pvParameters) {
                     lcd.print(uiMsg.displayLine0);
                     lcd.setCursor(0, 1);
                     lcd.print(uiMsg.displayLine1);
+
+                    // Mirror the accepted LCD update to the serial monitor so
+                    // display changes are visible without a physical LCD attached.
+                    Serial.println("[LCD]");
+                    Serial.println(uiMsg.displayLine0);
+                    Serial.println(uiMsg.displayLine1);
 
                     strncpy(lastLine0, uiMsg.displayLine0, sizeof(lastLine0));
                     strncpy(lastLine1, uiMsg.displayLine1, sizeof(lastLine1));
@@ -565,6 +603,8 @@ void Countdown_Task(void *pvParameters) {
                 LCD_MSG(uiMsg, "!! DISARM NOW !!", "                ");
                 snprintf(uiMsg.displayLine1, sizeof(uiMsg.displayLine1),
                          "Scan/PIN %2lus left", (unsigned long)secsLeft);
+                // Print the fully-formatted countdown line to serial as well
+                SERIAL_MSG("!! DISARM NOW !!", uiMsg.displayLine1);
                 xQueueSend(uiQueue, &uiMsg, 0);
             }
 
@@ -572,6 +612,7 @@ void Countdown_Task(void *pvParameters) {
                 counting = false;
                 system_message_t uiMsg;
                 LCD_MSG(uiMsg, "!!! ALARM !!!   ", "Scan/PIN:Silence");
+                SERIAL_MSG("!!! ALARM !!!   ", "Scan/PIN:Silence");
                 xQueueSend(uiQueue, &uiMsg, 0);
                 xQueueSend(sensorQueue, &expiredMsg, 0);
             }
@@ -593,6 +634,11 @@ void setup() {
     lcd.print("  SYSTEM ARMED  ");
     lcd.setCursor(0, 1);
     lcd.print(" Scan or Enter  ");
+
+    // Mirror the startup message to the serial monitor
+    Serial.println("----------------");
+    Serial.println("  SYSTEM ARMED  ");
+    Serial.println(" Scan or Enter  ");
 
     pinMode(RED_LED_PIN,   OUTPUT);
     pinMode(GREEN_LED_PIN, OUTPUT);
