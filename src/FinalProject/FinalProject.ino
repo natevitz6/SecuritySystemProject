@@ -207,11 +207,27 @@ void SecurityController_Task(void *pvParameters) {
     bool     exitCooldownActive  = false;
     uint32_t exitCooldownStartMs = 0;
 
+    // --- add these ---
+    #define MIN_DISPLAY_MS 2000   // minimum ms to hold a feedback state
+    bool     holdingDisplay      = false;
+    uint32_t displayHoldStartMs  = 0;
+    // -----------------
+
     while (1) {
-        //Serial.println("security task");
-        // Re-arm the system after the exit cooldown expires in STATE_DISARMED
+        uint32_t now = (uint32_t)(esp_timer_get_time() / 1000ULL);
+
+        // Don't process any new sensor events while holding a display state
+        if (holdingDisplay) {
+            if ((now - displayHoldStartMs) >= MIN_DISPLAY_MS) {
+                holdingDisplay = false;
+            } else {
+                vTaskDelay(pdMS_TO_TICKS(50));
+                continue;  // skip queue receive entirely until hold expires
+            }
+        }
+
+        // Re-arm after exit cooldown
         if (exitCooldownActive && state == STATE_DISARMED) {
-            uint32_t now = (uint32_t)(esp_timer_get_time() / 1000ULL);
             if ((now - exitCooldownStartMs) >= EXIT_COOLDOWN_MS) {
                 exitCooldownActive = false;
                 state = STATE_IDLE;
@@ -223,7 +239,6 @@ void SecurityController_Task(void *pvParameters) {
             }
         }
 
-        // Short timeout so the cooldown check above runs even with no messages
         if (xQueueReceive(sensorQueue, &msg, pdMS_TO_TICKS(100))) {
             switch (state) {
 
@@ -257,6 +272,9 @@ void SecurityController_Task(void *pvParameters) {
                         xQueueSend(uiQueue, &uiMsg, 0);
                         alarmMsg.type = EVENT_ACCESS_GRANTED;
                         xQueueSend(alarmQueue, &alarmMsg, 0);
+                        // hold so the user can see the green LED and message
+                        holdingDisplay     = true;
+                        displayHoldStartMs = now;
                     } else if (msg.type == EVENT_ACCESS_DENIED) {
                         state = STATE_ALARM_PENDING;
                         cdCmd = CMD_COUNTDOWN_START;
@@ -267,10 +285,13 @@ void SecurityController_Task(void *pvParameters) {
                 case STATE_DISARMED:
                     if (msg.type == EVENT_PIR_CLEAR) {
                         exitCooldownActive  = true;
-                        exitCooldownStartMs = (uint32_t)(esp_timer_get_time() / 1000ULL);
+                        exitCooldownStartMs = now;
                         LCD_MSG(uiMsg, " Access Granted!", "   Goodbye!     ");
                         SERIAL_MSG(" Access Granted!", "   Goodbye!     ");
                         xQueueSend(uiQueue, &uiMsg, 0);
+                        // hold so the goodbye message is visible
+                        holdingDisplay     = true;
+                        displayHoldStartMs = now;
                     } else if (msg.type == EVENT_PIR_MOTION) {
                         exitCooldownActive = false;
                         LCD_MSG(uiMsg, " Access Granted!", "  Welcome Back  ");
@@ -288,6 +309,8 @@ void SecurityController_Task(void *pvParameters) {
                         xQueueSend(uiQueue, &uiMsg, 0);
                         alarmMsg.type = EVENT_ALARM_CLEAR;
                         xQueueSend(alarmQueue, &alarmMsg, 0);
+                        holdingDisplay     = true;
+                        displayHoldStartMs = now;
                     } else if (msg.type == EVENT_ALARM_CLEAR) {
                         state = STATE_IDLE;
                         exitCooldownActive = false;
@@ -296,6 +319,8 @@ void SecurityController_Task(void *pvParameters) {
                         xQueueSend(uiQueue, &uiMsg, 0);
                         alarmMsg.type = EVENT_ALARM_CLEAR;
                         xQueueSend(alarmQueue, &alarmMsg, 0);
+                        holdingDisplay     = true;
+                        displayHoldStartMs = now;
                     }
                     break;
 
@@ -310,6 +335,8 @@ void SecurityController_Task(void *pvParameters) {
                         xQueueSend(uiQueue, &uiMsg, 0);
                         alarmMsg.type = EVENT_ACCESS_GRANTED;
                         xQueueSend(alarmQueue, &alarmMsg, 0);
+                        holdingDisplay     = true;
+                        displayHoldStartMs = now;
                     } else if (msg.type == EVENT_COUNTDOWN_EXPIRED) {
                         state = STATE_ALARM;
                         LCD_MSG(uiMsg, "!!! ALARM !!!   ", "Scan/PIN:Silence");
