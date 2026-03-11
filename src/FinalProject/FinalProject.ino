@@ -49,7 +49,7 @@
 #define LED_PIN              7    /**< PIR activity indicator LED pin. */
 #define RED_LED_PIN          5    /**< Red LED: solid = locked, blinking = alarm. */
 #define GREEN_LED_PIN        6    /**< Green LED: lit = access granted / disarmed. */
-#define IR_RECEIVE_PIN       15   /**< IR receiver data pin. */
+#define IR_RECEIVE_PIN       4   /**< IR receiver data pin. */
 #define RFID_SS_PIN          10    /**< RFID reader SDA/SS pin. */
 #define RFID_RST_PIN         9   /**< RFID reader RST pin. */
 #define SCK_PIN              12   /**< SPI clock pin. */
