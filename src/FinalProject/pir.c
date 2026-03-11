@@ -1,7 +1,7 @@
 /**
  * @file pir.c
  * @authors Nathan Vitzthum (natevitz), Peter Golden (petergo6)
- * @date 2025-03-01
+ * @date 2025-03-19
  * @brief Implementation of the PIR motion sensor driver with software debouncing.
  *
  * Implements a consecutive-sample debounce algorithm to filter the noisy

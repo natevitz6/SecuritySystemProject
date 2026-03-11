@@ -1,7 +1,7 @@
 /**
  * @file countdown.h
  * @authors Nathan Vitzthum (natevitz), Peter Golden (petergo6)
- * @date 2025-03-01
+ * @date 2025-03-19
  * @brief Public interface for the hardware-timer-based countdown driver.
  *
  * Provides a single countdown timer using Timer Group 0, Timer 1

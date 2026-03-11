@@ -1,7 +1,7 @@
 /**
  * @file FinalProject.ino
  * @authors Nathan Vitzthum (natevitz), Peter Golden (petergo6)
- * @date 2025-03-01
+ * @date 2025-03-19
  * @brief Top-level FreeRTOS application for the Enhanced Multi-Mode Security System.
  *
  * Implements a multi-task security system on the ESP32 using FreeRTOS queues

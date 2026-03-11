@@ -1,7 +1,7 @@
 /**
  * @file ir_remote.h
  * @authors Nathan Vitzthum (natevitz), Peter Golden (petergo6)
- * @date 2025-03-01
+ * @date 2025-03-19
  * @brief Public interface for the IR remote PIN entry driver.
  *
  * Decodes NEC IR signals from a remote control and manages a PIN entry buffer.

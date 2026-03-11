@@ -1,7 +1,7 @@
 /**
  * @file ir_remote.cpp
  * @authors Nathan Vitzthum (natevitz), Peter Golden (petergo6)
- * @date 2025-03-01
+ * @date 2025-03-19
  * @brief Implementation of the IR remote PIN entry driver.
  *
  * IR hex codes are mapped to digits 0–9 and control keys (OK, CLR) via a

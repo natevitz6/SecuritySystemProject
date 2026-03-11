@@ -1,7 +1,7 @@
 /**
  * @file ultrasonic.h
  * @authors Nathan Vitzthum (natevitz), Peter Golden (petergo6)
- * @date 2025-03-01
+ * @date 2025-03-19
  * @brief Public interface for the HC-SR04 ultrasonic distance sensor driver.
  *
  * Provides distance measurement and loitering detection using a hardware timer

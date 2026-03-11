@@ -1,7 +1,7 @@
 /**
  * @file rfid.cpp
  * @authors Nathan Vitzthum (natevitz), Peter Golden (petergo6)
- * @date 2025-03-01
+ * @date 2025-03-19
  * @brief Implementation of the RC522 RFID reader driver.
  *
  * Authorized UIDs are stored as compile-time constants. To add or change

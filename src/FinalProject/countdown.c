@@ -1,7 +1,7 @@
 /**
  * @file countdown.c
  * @authors Nathan Vitzthum (natevitz), Peter Golden (petergo6)
- * @date 2025-03-01
+ * @date 2025-03-19
  * @brief Implementation of the hardware-timer-based countdown driver.
  *
  * Uses Timer Group 0, Timer 1 with an 8000 divider (10,000 ticks/sec).

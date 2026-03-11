@@ -1,7 +1,7 @@
 /**
  * @file ultrasonic.c
  * @authors Nathan Vitzthum (natevitz), Peter Golden (petergo6)
- * @date 2025-03-01
+ * @date 2025-03-19
  * @brief Implementation of the HC-SR04 ultrasonic distance sensor driver.
  *
  * Uses Timer Group 0, Timer 0 (80 MHz / 8000 divider = 10,000 ticks/sec)

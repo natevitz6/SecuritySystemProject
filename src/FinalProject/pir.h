@@ -1,7 +1,7 @@
 /**
  * @file pir.h
  * @authors Nathan Vitzthum (natevitz), Peter Golden (petergo6)
- * @date 2025-03-01
+ * @date 2025-03-19
  * @brief Public interface for the PIR (Passive Infrared) motion sensor driver.
  *
  * This module provides initialization and polling functions for a PIR motion

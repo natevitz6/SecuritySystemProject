@@ -1,7 +1,7 @@
 /**
  * @file rfid.h
  * @authors Nathan Vitzthum (natevitz), Peter Golden (petergo6)
- * @date 2025-03-01
+ * @date 2025-03-19
  * @brief Public interface for the RC522 RFID reader driver.
  *
  * Provides card scanning and UID authorization using the MFRC522 library over SPI.
