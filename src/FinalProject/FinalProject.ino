@@ -1,4 +1,32 @@
-//
+/**
+ * @file FinalProject.ino
+ * @authors Nathan Vitzthum (natevitz), Peter Golden (petergo6)
+ * @date 2025-03-01
+ * @brief Top-level FreeRTOS application for the Enhanced Multi-Mode Security System.
+ *
+ * Implements a multi-task security system on the ESP32 using FreeRTOS queues
+ * for inter-task communication. Sensor tasks run on Core 0; the security
+ * controller, LCD, and alarm tasks run on Core 1.
+ *
+ * Task summary:
+ *  - PIR_Task             : Polls PIR sensor at 32 Hz, sends motion events
+ *  - Ultrasonic_Task      : Polls distance sensor at 50 Hz, sends loiter events
+ *  - IR_Task              : Polls IR remote at 64 Hz, sends PIN auth events
+ *  - RFID_Task            : Polls RFID reader at 10 Hz, sends card auth events
+ *  - Countdown_Task       : Manages grace-period countdown, sends expiry events
+ *  - SecurityController_Task : State machine consuming sensor events
+ *  - LCD_Task             : Consumes UI messages and updates the LCD display
+ *  - Alarm_Task           : Drives red/green LEDs based on alarm state
+ *
+ * Queue summary:
+ *  - sensorQueue    : Sensor/auth tasks  → SecurityController_Task
+ *  - uiQueue        : Any task           → LCD_Task
+ *  - alarmQueue     : Controller         → Alarm_Task
+ *  - countdownQueue : Controller         → Countdown_Task
+ */
+
+// ========================== Includes ===============================
+
 #include <Arduino.h>
 #include <LiquidCrystal_I2C.h>
 #include <freertos/FreeRTOS.h>
@@ -10,82 +38,100 @@
 #include "ir_remote.h"
 #include "countdown.h"
 
-// Define pins
-#define TRIG_PIN 2
-#define ECHO_PIN 1
-#define LOITER_DISTANCE_CM 20   // distance threshold for approach
-#define LOITER_TIME_MS 5000      // 5 seconds to detect loitering
-#define PIR_PIN 4
-#define PIN_LENGTH 4
-#define LED_PIN 7
-#define RED_LED_PIN   5    //solid = locked, blinking = alarm
-#define GREEN_LED_PIN 6 
-#define IR_RECEIVE_PIN 15
-#define RFID_SS_PIN  9
-#define RFID_RST_PIN 10
-#define SCK_PIN 12
-#define MOSI_PIN 11
-#define MISO_PIN 13
-#define ALARM_GRACE_PERIOD_MS 10000  // 10 seconds
-#define EXIT_COOLDOWN_MS 5000
+// ========================== Macros =================================
 
-extern "C" {
-    void PIR_init(uint8_t inputPin, uint8_t ledPin);
-    void PIR_update(void);
-    bool PIR_isMotionDetected(void);
-    void Ultrasonic_init(uint8_t trigPin, uint8_t echoPin);
-    void Ultrasonic_update(void);
-    int Ultrasonic_getDistance(void);
-    bool Ultrasonic_isLoitering(int distanceThresholdCm, unsigned long timeLimitMs);
-    void    IRRemote_init(uint8_t receivePin);
-    bool    IRRemote_update(void);
-    bool    IRRemote_isPINCorrect(void);
-    bool    IRRemote_wasClearPressed(void);
-    uint8_t IRRemote_getDigitCount(void);
-    void IRRemote_getEnteredPIN(uint8_t *buf, uint8_t len);
-    void    RFID_init(uint8_t ssPin, uint8_t rstPin);
-    bool    RFID_update(void);
-    bool    RFID_isAuthorized(void);
-    void    Countdown_init(void);
-    void    Countdown_start(uint32_t durationMs);
-    void    Countdown_cancel(void);
-    uint32_t Countdown_getSecondsRemaining(void);
-    bool    Countdown_hasExpired(void);
-    bool    Countdown_isActive(void);
-}
+#define TRIG_PIN             2    /**< Ultrasonic sensor TRIG pin. */
+#define ECHO_PIN             1    /**< Ultrasonic sensor ECHO pin. */
+#define LOITER_DISTANCE_CM   20   /**< Distance threshold (cm) for loitering detection. */
+#define LOITER_TIME_MS       5000 /**< Time (ms) within range before loitering is declared. */
+#define PIR_PIN              4    /**< PIR sensor signal pin. */
+#define PIN_LENGTH           4    /**< IR remote PIN length. */
+#define LED_PIN              7    /**< PIR activity indicator LED pin. */
+#define RED_LED_PIN          5    /**< Red LED: solid = locked, blinking = alarm. */
+#define GREEN_LED_PIN        6    /**< Green LED: lit = access granted / disarmed. */
+#define IR_RECEIVE_PIN       15   /**< IR receiver data pin. */
+#define RFID_SS_PIN          9    /**< RFID reader SDA/SS pin. */
+#define RFID_RST_PIN         10   /**< RFID reader RST pin. */
+#define SCK_PIN              12   /**< SPI clock pin. */
+#define MOSI_PIN             11   /**< SPI MOSI pin. */
+#define MISO_PIN             13   /**< SPI MISO pin. */
+#define ALARM_GRACE_PERIOD_MS 10000 /**< Grace period (ms) before alarm triggers after denied entry. */
+#define EXIT_COOLDOWN_MS     5000   /**< Time (ms) after exit before system re-arms. */
 
-LiquidCrystal_I2C lcd(0x27, 16, 2);
+// ======================== Global Variables =========================
 
-// System Event Types
+LiquidCrystal_I2C lcd(0x27, 16, 2); /**< I2C LCD at address 0x27, 16 columns x 2 rows. */
+
+QueueHandle_t sensorQueue;    /**< Sensor/auth events to SecurityController_Task. */
+QueueHandle_t uiQueue;        /**< Display update messages to LCD_Task. */
+QueueHandle_t alarmQueue;     /**< Alarm state changes to Alarm_Task. */
+QueueHandle_t countdownQueue; /**< Countdown commands to Countdown_Task. */
+
+// ========================== Enums ==================================
+
+/**
+ * @brief System-wide event types passed between tasks via queues.
+ */
 typedef enum {
-    EVENT_PIR_MOTION,
-    EVENT_PIR_CLEAR,
-    EVENT_DISTANCE_UPDATE,
-    EVENT_LOITERING,
-    EVENT_DISPLAY_UPDATE,
-    EVENT_ALARM_TRIGGER,
-    EVENT_ALARM_CLEAR,
-    EVENT_ACCESS_GRANTED, 
-    EVENT_ACCESS_DENIED,
-    EVENT_COUNTDOWN_EXPIRED
+    EVENT_PIR_MOTION,        /**< PIR sensor detected motion. */
+    EVENT_PIR_CLEAR,         /**< PIR sensor cleared (no motion). */
+    EVENT_DISTANCE_UPDATE,   /**< New ultrasonic distance reading available. */
+    EVENT_LOITERING,         /**< Object within range longer than LOITER_TIME_MS. */
+    EVENT_DISPLAY_UPDATE,    /**< New content ready for the LCD display. */
+    EVENT_ALARM_TRIGGER,     /**< Alarm should activate. */
+    EVENT_ALARM_CLEAR,       /**< Alarm should deactivate. */
+    EVENT_ACCESS_GRANTED,    /**< Valid PIN or RFID credential presented. */
+    EVENT_ACCESS_DENIED,     /**< Invalid PIN or RFID credential presented. */
+    EVENT_COUNTDOWN_EXPIRED  /**< Grace-period countdown reached zero. */
 } system_event_t;
 
-// System state machine
+/**
+ * @brief Top-level security system states.
+ */
 typedef enum {
-    STATE_IDLE,
-    STATE_MOTION_DETECTED,
-    STATE_DISARMED,
-    STATE_ALARM_PENDING,
-    STATE_ALARM
+    STATE_IDLE,             /**< System armed, no motion detected. */
+    STATE_MOTION_DETECTED,  /**< Motion detected, awaiting authentication. */
+    STATE_DISARMED,         /**< Valid credential accepted, system disarmed. */
+    STATE_ALARM_PENDING,    /**< Invalid credential; grace-period countdown running. */
+    STATE_ALARM             /**< Alarm active. */
 } security_state_t;
 
+/**
+ * @brief Commands sent to Countdown_Task via countdownQueue.
+ */
+typedef enum {
+    CMD_COUNTDOWN_START,  /**< Start the grace-period countdown. */
+    CMD_COUNTDOWN_CANCEL  /**< Cancel an in-progress countdown. */
+} countdown_cmd_t;
+
+// ========================== Structs ================================
+
+/**
+ * @brief Message payload passed through sensorQueue and uiQueue.
+ *
+ * For sensor events, @p type and @p value are used.
+ * For display events (@c EVENT_DISPLAY_UPDATE), @p displayLine0 and
+ * @p displayLine1 carry the two LCD row strings.
+ */
 typedef struct {
     system_event_t type;
-    int value;
-    char displayLine0[17];  // 16 chars + null terminator
-    char displayLine1[17];
+    int            value;
+    char           displayLine0[17]; /**< LCD row 0 content (16 chars + null). */
+    char           displayLine1[17]; /**< LCD row 1 content (16 chars + null). */
 } system_message_t;
 
+// ========================== Macros =================================
+
+/**
+ * @brief Populates a system_message_t for an LCD display update.
+ *
+ * Sets the message type to EVENT_DISPLAY_UPDATE and safely copies
+ * the two provided strings into the display line buffers.
+ *
+ * @param msg  The system_message_t variable to populate.
+ * @param l0   String for LCD row 0 (max 16 chars).
+ * @param l1   String for LCD row 1 (max 16 chars).
+ */
 #define LCD_MSG(msg, l0, l1) do { \
     (msg).type = EVENT_DISPLAY_UPDATE; \
     strncpy((msg).displayLine0, (l0), 16); \
@@ -94,17 +140,46 @@ typedef struct {
     (msg).displayLine1[16] = '\0'; \
 } while(0)
 
-// Queues
-QueueHandle_t sensorQueue;
-QueueHandle_t uiQueue;
-QueueHandle_t alarmQueue;
-QueueHandle_t countdownQueue;
+// Forward declarations for C-linkage driver functions
+extern "C" {
+    void PIR_init(uint8_t inputPin, uint8_t ledPin);
+    void PIR_update(void);
+    bool PIR_isMotionDetected(void);
+    void Ultrasonic_init(uint8_t trigPin, uint8_t echoPin);
+    void Ultrasonic_update(void);
+    int  Ultrasonic_getDistance(void);
+    bool Ultrasonic_isLoitering(int distanceThresholdCm, unsigned long timeLimitMs);
+    void     IRRemote_init(uint8_t receivePin);
+    bool     IRRemote_update(void);
+    bool     IRRemote_isPINCorrect(void);
+    bool     IRRemote_wasClearPressed(void);
+    uint8_t  IRRemote_getDigitCount(void);
+    void     IRRemote_getEnteredPIN(uint8_t *buf, uint8_t len);
+    void     RFID_init(uint8_t ssPin, uint8_t rstPin);
+    bool     RFID_update(void);
+    bool     RFID_isAuthorized(void);
+    void     Countdown_init(void);
+    void     Countdown_start(uint32_t durationMs);
+    void     Countdown_cancel(void);
+    uint32_t Countdown_getSecondsRemaining(void);
+    bool     Countdown_hasExpired(void);
+    bool     Countdown_isActive(void);
+}
 
-typedef enum {
-    CMD_COUNTDOWN_START,
-    CMD_COUNTDOWN_CANCEL
-} countdown_cmd_t;
+// ====================== Function Implementations ===================
 
+/**
+ * @brief Central security state machine task.
+ *
+ * Consumes events from sensorQueue and drives state transitions. Sends
+ * display messages to uiQueue, alarm commands to alarmQueue, and countdown
+ * commands to countdownQueue. Also manages the exit cooldown timer that
+ * re-arms the system after an authorized user leaves.
+ *
+ * Pinned to Core 1. Priority 1.
+ *
+ * @param pvParameters  Unused FreeRTOS task parameter.
+ */
 void SecurityController_Task(void *pvParameters) {
     system_message_t msg;
     system_message_t uiMsg;
@@ -115,6 +190,7 @@ void SecurityController_Task(void *pvParameters) {
     uint32_t exitCooldownStartMs = 0;
 
     while (1) {
+        // Re-arm the system after the exit cooldown expires in STATE_DISARMED
         if (exitCooldownActive && state == STATE_DISARMED) {
             uint32_t now = (uint32_t)(esp_timer_get_time() / 1000ULL);
             if ((now - exitCooldownStartMs) >= EXIT_COOLDOWN_MS) {
@@ -127,8 +203,7 @@ void SecurityController_Task(void *pvParameters) {
             }
         }
 
-        // Use a short timeout instead of portMAX_DELAY so the cooldown check
-        // above gets to run even when no messages are arriving
+        // Short timeout so the cooldown check above runs even with no messages
         if (xQueueReceive(sensorQueue, &msg, pdMS_TO_TICKS(100))) {
             switch (state) {
 
@@ -162,7 +237,6 @@ void SecurityController_Task(void *pvParameters) {
                         state = STATE_ALARM_PENDING;
                         cdCmd = CMD_COUNTDOWN_START;
                         xQueueSend(countdownQueue, &cdCmd, 0);
-                        // Countdown_Task will take over the LCD from here
                     }
                     break;
 
@@ -220,16 +294,23 @@ void SecurityController_Task(void *pvParameters) {
     }
 }
 
+/**
+ * @brief Polls the PIR sensor and sends motion state change events.
+ *
+ * Only enqueues a message when the debounced state transitions, avoiding
+ * redundant events. Runs at 32 Hz on Core 0. Priority 2.
+ *
+ * @param pvParameters  Unused FreeRTOS task parameter.
+ */
 void PIR_Task(void *pvParameters) {
     TickType_t xLastWakeTime = xTaskGetTickCount();
     const TickType_t xFrequency = pdMS_TO_TICKS(31);
-    bool lastState = false;  // track previous stable state
+    bool lastState = false;
 
     while (1) {
         PIR_update();
         bool currentState = PIR_isMotionDetected();
 
-        // Only send a message when the state actually changes
         if (currentState != lastState) {
             lastState = currentState;
             system_message_t msg;
@@ -242,19 +323,24 @@ void PIR_Task(void *pvParameters) {
     }
 }
 
+/**
+ * @brief Polls the ultrasonic sensor and sends loitering events.
+ *
+ * Runs at 50 Hz on Core 0. Priority 3.
+ *
+ * @param pvParameters  Unused FreeRTOS task parameter.
+ */
 void Ultrasonic_Task(void *pvParameters) {
     TickType_t xLastWakeTime = xTaskGetTickCount();
-    const TickType_t xFrequency = pdMS_TO_TICKS(20); // 50Hz
+    const TickType_t xFrequency = pdMS_TO_TICKS(20);
 
     while (1) {
         Ultrasonic_update();
         int dist = Ultrasonic_getDistance();
 
-        system_message_t msg;
-
-        // Check loitering
         if (Ultrasonic_isLoitering(LOITER_DISTANCE_CM, LOITER_TIME_MS)) {
-            msg.type = EVENT_LOITERING;
+            system_message_t msg;
+            msg.type  = EVENT_LOITERING;
             msg.value = dist;
             xQueueSend(sensorQueue, &msg, 0);
         }
@@ -263,9 +349,18 @@ void Ultrasonic_Task(void *pvParameters) {
     }
 }
 
+/**
+ * @brief Polls the IR remote and sends PIN authentication events.
+ *
+ * Updates the LCD with masked PIN progress on each digit press and sends
+ * EVENT_ACCESS_GRANTED or EVENT_ACCESS_DENIED when OK is pressed.
+ * Runs at 64 Hz on Core 0. Priority 2.
+ *
+ * @param pvParameters  Unused FreeRTOS task parameter.
+ */
 void IR_Task(void *pvParameters) {
     TickType_t xLastWakeTime = xTaskGetTickCount();
-    const TickType_t xFrequency = pdMS_TO_TICKS(16); // ~64Hz
+    const TickType_t xFrequency = pdMS_TO_TICKS(16);
 
     while (1) {
         bool pinSubmitted = IRRemote_update();
@@ -273,39 +368,24 @@ void IR_Task(void *pvParameters) {
         system_message_t msg;
         system_message_t uiMsg;
 
-        if (IRRemote_wasClearPressed()) {
-            // Give LCD feedback that entry was cleared
-            uiMsg.type = EVENT_DISPLAY_UPDATE;
-            snprintf(uiMsg.displayMsg, sizeof(uiMsg.displayMsg), "Cleared");
-            xQueueSend(uiQueue, &uiMsg, 0);
-        }
-
         if (pinSubmitted) {
-            if (IRRemote_isPINCorrect()) {
-                msg.type  = EVENT_ACCESS_GRANTED;
-                msg.value = 0;
-            } else {
-                msg.type  = EVENT_ACCESS_DENIED;
-                msg.value = 0;
-            }
+            msg.type  = IRRemote_isPINCorrect() ? EVENT_ACCESS_GRANTED : EVENT_ACCESS_DENIED;
+            msg.value = 0;
             xQueueSend(sensorQueue, &msg, 0);
         }
 
-        // Show digit count progress on LCD (e.g. "PIN: ** " )
+        // Update LCD with masked digit progress (e.g. "PIN: **  ")
         uint8_t digits = IRRemote_getDigitCount();
         if (digits > 0) {
-            system_message_t uiMsg;
             char pinDisplay[17] = "PIN:            ";
             for (uint8_t i = 0; i < digits; i++) {
-                pinDisplay[5 + i] = '*';  // mask with stars, starting at position 5
+                pinDisplay[5 + i] = '*';
             }
             LCD_MSG(uiMsg, "  Enter PIN:    ", pinDisplay);
             xQueueSend(uiQueue, &uiMsg, 0);
         }
 
-        // Clear pressed
         if (IRRemote_wasClearPressed()) {
-            system_message_t uiMsg;
             LCD_MSG(uiMsg, "  Enter PIN:    ", "PIN: Cleared    ");
             xQueueSend(uiQueue, &uiMsg, 0);
         }
@@ -314,9 +394,16 @@ void IR_Task(void *pvParameters) {
     }
 }
 
+/**
+ * @brief Polls the RFID reader and sends card authentication events.
+ *
+ * Runs at 10 Hz on Core 0. Priority 2.
+ *
+ * @param pvParameters  Unused FreeRTOS task parameter.
+ */
 void RFID_Task(void *pvParameters) {
     TickType_t xLastWakeTime = xTaskGetTickCount();
-    const TickType_t xFrequency = pdMS_TO_TICKS(100); // 10Hz — cards don't need fast polling
+    const TickType_t xFrequency = pdMS_TO_TICKS(100);
 
     while (1) {
         bool cardScanned = RFID_update();
@@ -324,6 +411,8 @@ void RFID_Task(void *pvParameters) {
         if (cardScanned) {
             system_message_t msg;
             system_message_t uiMsg;
+
+            msg.type = RFID_isAuthorized() ? EVENT_ACCESS_GRANTED : EVENT_ACCESS_DENIED;
 
             if (RFID_isAuthorized()) {
                 LCD_MSG(uiMsg, " Access Granted!", "  Welcome Back  ");
@@ -339,7 +428,14 @@ void RFID_Task(void *pvParameters) {
     }
 }
 
-// LCD/UI Task: Handles all display updates
+/**
+ * @brief Receives display messages and updates the I2C LCD.
+ *
+ * Only redraws when the content has actually changed to minimize I2C traffic.
+ * Blocks indefinitely on uiQueue when idle. Pinned to Core 1. Priority 1.
+ *
+ * @param pvParameters  Unused FreeRTOS task parameter.
+ */
 void LCD_Task(void *pvParameters) {
     system_message_t uiMsg;
     char lastLine0[17] = "";
@@ -348,7 +444,6 @@ void LCD_Task(void *pvParameters) {
     while (1) {
         if (xQueueReceive(uiQueue, &uiMsg, portMAX_DELAY)) {
             if (uiMsg.type == EVENT_DISPLAY_UPDATE) {
-                // Only redraw if something actually changed
                 if (strcmp(lastLine0, uiMsg.displayLine0) != 0 ||
                     strcmp(lastLine1, uiMsg.displayLine1) != 0) {
 
@@ -366,28 +461,34 @@ void LCD_Task(void *pvParameters) {
     }
 }
 
+/**
+ * @brief Drives the red and green LEDs based on alarm and access state.
+ *
+ * Red LED: solid when locked, blinking at 4 Hz when alarm is active.
+ * Green LED: lit when access is granted / system is disarmed.
+ * Pinned to Core 1. Priority 2.
+ *
+ * @param pvParameters  Unused FreeRTOS task parameter.
+ */
 void Alarm_Task(void *pvParameters) {
     bool alarmActive   = false;
     bool accessGranted = false;
     bool ledState      = false;
-    bool disarmPending = false;
     TickType_t xLastWakeTime = xTaskGetTickCount();
-    const TickType_t xFrequency = pdMS_TO_TICKS(250); // 4 Hz blink
+    const TickType_t xFrequency = pdMS_TO_TICKS(250); // 4 Hz blink rate
 
     while (1) {
-        // Check for new events (non-blocking)
         system_message_t msg;
         while (xQueueReceive(alarmQueue, &msg, 0) == pdTRUE) {
             switch (msg.type) {
                 case EVENT_ALARM_TRIGGER:
                     alarmActive   = true;
                     accessGranted = false;
-                    disarmPending  = false;
                     break;
                 case EVENT_ALARM_CLEAR:
                     if (alarmActive) {
-                        alarmActive  = false;
-                        ledState     = false;
+                        alarmActive = false;
+                        ledState    = false;
                         digitalWrite(RED_LED_PIN, HIGH);
                     }
                     break;
@@ -406,34 +507,40 @@ void Alarm_Task(void *pvParameters) {
             }
         }
 
-        // LED output logic
         if (alarmActive) {
-            // Blink red LED
             ledState = !ledState;
             digitalWrite(RED_LED_PIN,   ledState ? HIGH : LOW);
             digitalWrite(GREEN_LED_PIN, LOW);
         } else if (!accessGranted) {
-            // Idle / locked state: solid red
             digitalWrite(RED_LED_PIN,   HIGH);
             digitalWrite(GREEN_LED_PIN, LOW);
         }
-        // If accessGranted: GREEN is already set above on the event edge
 
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
     }
 }
 
+/**
+ * @brief Manages the grace-period countdown and notifies the controller on expiry.
+ *
+ * Receives CMD_COUNTDOWN_START / CMD_COUNTDOWN_CANCEL commands from
+ * SecurityController_Task via countdownQueue. While counting, updates the
+ * LCD with the remaining seconds once per second and sends
+ * EVENT_COUNTDOWN_EXPIRED to sensorQueue when time runs out.
+ * Pinned to Core 1. Priority 2.
+ *
+ * @param pvParameters  Unused FreeRTOS task parameter.
+ */
 void Countdown_Task(void *pvParameters) {
     countdown_cmd_t  cmd;
-    system_message_t uiMsg;
     system_message_t expiredMsg;
-    uint32_t         lastSecond   = 0;
-    bool             counting     = false;
+    uint32_t         lastSecond = 0;
+    bool             counting   = false;
 
     expiredMsg.type = EVENT_COUNTDOWN_EXPIRED;
 
     while (1) {
-        // Check for a new command (non-blocking when counting, blocking when idle)
+        // Block when idle; non-blocking poll when counting
         BaseType_t got = xQueueReceive(countdownQueue, &cmd,
                                        counting ? 0 : portMAX_DELAY);
         if (got == pdTRUE) {
@@ -454,9 +561,8 @@ void Countdown_Task(void *pvParameters) {
                 lastSecond = secsLeft;
                 system_message_t uiMsg;
                 LCD_MSG(uiMsg, "!! DISARM NOW !!", "                ");
-                // Overwrite line 1 with the live second count + disarm hint
                 snprintf(uiMsg.displayLine1, sizeof(uiMsg.displayLine1),
-                        "Scan/PIN %2lus left", (unsigned long)secsLeft);
+                         "Scan/PIN %2lus left", (unsigned long)secsLeft);
                 xQueueSend(uiQueue, &uiMsg, 0);
             }
 
@@ -469,10 +575,13 @@ void Countdown_Task(void *pvParameters) {
             }
         }
 
-        vTaskDelay(pdMS_TO_TICKS(100)); // poll at 10 Hz — fine for 1-second LCD updates
+        vTaskDelay(pdMS_TO_TICKS(100)); // 10 Hz poll — sufficient for 1-second LCD updates
     }
 }
 
+/**
+ * @brief Arduino setup — initializes all peripherals, queues, and FreeRTOS tasks.
+ */
 void setup() {
     Serial.begin(115200);
     Wire.begin();
@@ -492,21 +601,24 @@ void setup() {
     Ultrasonic_init(TRIG_PIN, ECHO_PIN);
     IRRemote_init(IR_RECEIVE_PIN);
     RFID_init(RFID_SS_PIN, RFID_RST_PIN);
-    Countdown_init();  // initialize Timer 1
+    Countdown_init();
 
-    sensorQueue   = xQueueCreate(10, sizeof(system_message_t));
-    uiQueue       = xQueueCreate(10, sizeof(system_message_t));
-    alarmQueue    = xQueueCreate(10, sizeof(system_message_t));
-    countdownQueue = xQueueCreate(5, sizeof(countdown_cmd_t));
+    sensorQueue    = xQueueCreate(10, sizeof(system_message_t));
+    uiQueue        = xQueueCreate(10, sizeof(system_message_t));
+    alarmQueue     = xQueueCreate(10, sizeof(system_message_t));
+    countdownQueue = xQueueCreate(5,  sizeof(countdown_cmd_t));
 
-    xTaskCreatePinnedToCore(PIR_Task,                 "PIR Task",           4096, NULL, 2, NULL, 0);
-    xTaskCreatePinnedToCore(Ultrasonic_Task,          "Ultrasonic Task",    4096, NULL, 3, NULL, 0);
-    xTaskCreatePinnedToCore(IR_Task,                  "IR Task",            4096, NULL, 2, NULL, 0);
-    xTaskCreatePinnedToCore(RFID_Task,                "RFID Task",          4096, NULL, 2, NULL, 0);
-    xTaskCreatePinnedToCore(Countdown_Task,           "Countdown Task",     4096, NULL, 2, NULL, 0);
-    xTaskCreatePinnedToCore(SecurityController_Task,  "Security Controller",4096, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(LCD_Task,                 "LCD Task",           4096, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(Alarm_Task,               "Alarm Task",         4096, NULL, 2, NULL, 1);
+    xTaskCreatePinnedToCore(PIR_Task,                "PIR Task",            4096, NULL, 2, NULL, 0);
+    xTaskCreatePinnedToCore(Ultrasonic_Task,         "Ultrasonic Task",     4096, NULL, 3, NULL, 0);
+    xTaskCreatePinnedToCore(IR_Task,                 "IR Task",             4096, NULL, 2, NULL, 0);
+    xTaskCreatePinnedToCore(RFID_Task,               "RFID Task",           4096, NULL, 2, NULL, 0);
+    xTaskCreatePinnedToCore(Countdown_Task,          "Countdown Task",      4096, NULL, 2, NULL, 0);
+    xTaskCreatePinnedToCore(SecurityController_Task, "Security Controller", 4096, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(LCD_Task,                "LCD Task",            4096, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(Alarm_Task,              "Alarm Task",          4096, NULL, 2, NULL, 1);
 }
 
+/**
+ * @brief Arduino main loop — unused; all work is done in FreeRTOS tasks.
+ */
 void loop() {}
