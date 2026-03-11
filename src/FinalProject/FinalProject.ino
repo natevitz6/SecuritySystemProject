@@ -44,7 +44,7 @@
 #define ECHO_PIN             1    /**< Ultrasonic sensor ECHO pin. */
 #define LOITER_DISTANCE_CM   20   /**< Distance threshold (cm) for loitering detection. */
 #define LOITER_TIME_MS       5000 /**< Time (ms) within range before loitering is declared. */
-#define PIR_PIN              4    /**< PIR sensor signal pin. */
+#define PIR_PIN              3    /**< PIR sensor signal pin. */
 #define PIN_LENGTH           4    /**< IR remote PIN length. */
 #define LED_PIN              7    /**< PIR activity indicator LED pin. */
 #define RED_LED_PIN          5    /**< Red LED: solid = locked, blinking = alarm. */
@@ -411,6 +411,7 @@ void RFID_Task(void *pvParameters) {
         bool cardScanned = RFID_update();
 
         if (cardScanned) {
+            Serial.print("Scanned");
             system_message_t msg;
             system_message_t uiMsg;
 
@@ -586,6 +587,7 @@ void Countdown_Task(void *pvParameters) {
  */
 void setup() {
     Serial.begin(115200);
+    Wire.setPins(47,48);
     Wire.begin();
     lcd.init();
     lcd.backlight();
