@@ -42,6 +42,12 @@ void RFID_init(uint8_t ssPin, uint8_t rstPin) {
     SPI.begin(12, 13, 11, 10);
     _mfrc522 = MFRC522(ssPin, rstPin);
     _mfrc522.PCD_Init();
+    delay(50);
+    // Debug — prints firmware version, should be 0x91 or 0x92
+    // If it prints 0x00 or 0xFF, wiring is wrong
+    byte v = _mfrc522.PCD_ReadRegister(MFRC522::VersionReg);
+    Serial.print("RFID Firmware Version: 0x");
+    Serial.println(v, HEX);
 }
 
 // See rfid.h for full interface documentation.

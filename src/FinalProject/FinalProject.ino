@@ -50,8 +50,8 @@
 #define RED_LED_PIN          5    /**< Red LED: solid = locked, blinking = alarm. */
 #define GREEN_LED_PIN        6    /**< Green LED: lit = access granted / disarmed. */
 #define IR_RECEIVE_PIN       15   /**< IR receiver data pin. */
-#define RFID_SS_PIN          9    /**< RFID reader SDA/SS pin. */
-#define RFID_RST_PIN         10   /**< RFID reader RST pin. */
+#define RFID_SS_PIN          10    /**< RFID reader SDA/SS pin. */
+#define RFID_RST_PIN         9   /**< RFID reader RST pin. */
 #define SCK_PIN              12   /**< SPI clock pin. */
 #define MOSI_PIN             11   /**< SPI MOSI pin. */
 #define MISO_PIN             13   /**< SPI MISO pin. */
@@ -198,6 +198,7 @@ extern "C" {
  * @param pvParameters  Unused FreeRTOS task parameter.
  */
 void SecurityController_Task(void *pvParameters) {
+    
     system_message_t msg;
     system_message_t uiMsg;
     system_message_t alarmMsg;
@@ -207,6 +208,7 @@ void SecurityController_Task(void *pvParameters) {
     uint32_t exitCooldownStartMs = 0;
 
     while (1) {
+        //Serial.println("security task");
         // Re-arm the system after the exit cooldown expires in STATE_DISARMED
         if (exitCooldownActive && state == STATE_DISARMED) {
             uint32_t now = (uint32_t)(esp_timer_get_time() / 1000ULL);
@@ -336,6 +338,7 @@ void PIR_Task(void *pvParameters) {
     bool lastState = false;
 
     while (1) {
+        //Serial.println("pir task");
         PIR_update();
         bool currentState = PIR_isMotionDetected();
 
@@ -359,10 +362,12 @@ void PIR_Task(void *pvParameters) {
  * @param pvParameters  Unused FreeRTOS task parameter.
  */
 void Ultrasonic_Task(void *pvParameters) {
+    
     TickType_t xLastWakeTime = xTaskGetTickCount();
     const TickType_t xFrequency = pdMS_TO_TICKS(20);
 
     while (1) {
+        //Serial.println("ultra task");
         Ultrasonic_update();
         int dist = Ultrasonic_getDistance();
 
@@ -387,10 +392,12 @@ void Ultrasonic_Task(void *pvParameters) {
  * @param pvParameters  Unused FreeRTOS task parameter.
  */
 void IR_Task(void *pvParameters) {
+   
     TickType_t xLastWakeTime = xTaskGetTickCount();
     const TickType_t xFrequency = pdMS_TO_TICKS(16);
 
     while (1) {
+        //Serial.println("ir task");
         bool pinSubmitted = IRRemote_update();
 
         system_message_t msg;
@@ -433,14 +440,15 @@ void IR_Task(void *pvParameters) {
  * @param pvParameters  Unused FreeRTOS task parameter.
  */
 void RFID_Task(void *pvParameters) {
+    
     TickType_t xLastWakeTime = xTaskGetTickCount();
     const TickType_t xFrequency = pdMS_TO_TICKS(100);
 
     while (1) {
         bool cardScanned = RFID_update();
-
+        //Serial.println("rfid task");
         if (cardScanned) {
-            Serial.print("Scanned");
+            //Serial.print("Scanned");
             system_message_t msg;
             system_message_t uiMsg;
 
@@ -472,11 +480,13 @@ void RFID_Task(void *pvParameters) {
  * @param pvParameters  Unused FreeRTOS task parameter.
  */
 void LCD_Task(void *pvParameters) {
+    
     system_message_t uiMsg;
     char lastLine0[17] = "";
     char lastLine1[17] = "";
 
     while (1) {
+        //Serial.println("lcd task");
         if (xQueueReceive(uiQueue, &uiMsg, portMAX_DELAY)) {
             if (uiMsg.type == EVENT_DISPLAY_UPDATE) {
                 if (strcmp(lastLine0, uiMsg.displayLine0) != 0 ||
@@ -512,6 +522,7 @@ void LCD_Task(void *pvParameters) {
  * @param pvParameters  Unused FreeRTOS task parameter.
  */
 void Alarm_Task(void *pvParameters) {
+    
     bool alarmActive   = false;
     bool accessGranted = false;
     bool ledState      = false;
@@ -519,6 +530,7 @@ void Alarm_Task(void *pvParameters) {
     const TickType_t xFrequency = pdMS_TO_TICKS(250); // 4 Hz blink rate
 
     while (1) {
+        //Serial.println("Alarm task");
         system_message_t msg;
         while (xQueueReceive(alarmQueue, &msg, 0) == pdTRUE) {
             switch (msg.type) {
