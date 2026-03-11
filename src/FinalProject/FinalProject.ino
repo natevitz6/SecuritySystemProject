@@ -76,6 +76,7 @@ typedef enum {
     EVENT_PIR_MOTION,        /**< PIR sensor detected motion. */
     EVENT_PIR_CLEAR,         /**< PIR sensor cleared (no motion). */
     EVENT_DISTANCE_UPDATE,   /**< New ultrasonic distance reading available. */
+    EVENT_LOITER_MOTION,     /**< Object within range of door. */
     EVENT_LOITERING,         /**< Object within range longer than LOITER_TIME_MS. */
     EVENT_DISPLAY_UPDATE,    /**< New content ready for the LCD display. */
     EVENT_ALARM_TRIGGER,     /**< Alarm should activate. */
@@ -244,9 +245,14 @@ void SecurityController_Task(void *pvParameters) {
 
                 case STATE_IDLE:
                     if (msg.type == EVENT_PIR_MOTION) {
-                        state = STATE_MOTION_DETECTED;
+                        state = STATE_DISARMED;
                         LCD_MSG(uiMsg, " Motion Detected", "Scan/PIN to Dsrm");
                         SERIAL_MSG(" Motion Detected", "Scan/PIN to Dsrm");
+                        xQueueSend(uiQueue, &uiMsg, 0);
+                    } else if (msg.type == EVENT_LOITER_MOTION) {
+                        state = STATE_MOTION_DETECTED;
+                        LCD_MSG(uiMsg, " Loitering Alert ", "Scan/PIN:Silence");
+                        SERIAL_MSG(" Loitering Alert ", "Scan/PIN:Silence");
                         xQueueSend(uiQueue, &uiMsg, 0);
                     }
                     break;
@@ -398,7 +404,12 @@ void Ultrasonic_Task(void *pvParameters) {
         Ultrasonic_update();
         int dist = Ultrasonic_getDistance();
 
-        if (Ultrasonic_isLoitering(LOITER_DISTANCE_CM, LOITER_TIME_MS)) {
+        if (dist < LOITER_DISTANCE_CM) {
+            system_message_t msg;
+            msg.type  = EVENT_LOITER_MOTION;
+            msg.value = dist;
+            xQueueSend(sensorQueue, &msg, 0);
+        } else if (Ultrasonic_isLoitering(LOITER_DISTANCE_CM, LOITER_TIME_MS)) {
             system_message_t msg;
             msg.type  = EVENT_LOITERING;
             msg.value = dist;
