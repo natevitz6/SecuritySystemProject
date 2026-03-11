@@ -1,104 +1,70 @@
 /**
- * @file ultrasonic.c
+ * @file ultrasonic.h
  * @authors Nathan Vitzthum (natevitz), Peter Golden (petergo6)
  * @date 2025-03-01
- * @brief Implementation of the HC-SR04 ultrasonic distance sensor driver.
+ * @brief Public interface for the HC-SR04 ultrasonic distance sensor driver.
  *
- * Uses Timer Group 0, Timer 0 (80 MHz / 8000 divider = 10,000 ticks/sec)
- * for loitering detection timing. Distance is computed from the echo pulse
- * duration using the standard speed-of-sound formula.
+ * Provides distance measurement and loitering detection using a hardware timer
+ * (Timer Group 0, Timer 0) for tick-based timing. Intended to be polled from
+ * Ultrasonic_Task at 50 Hz.
  */
+
+#ifndef ULTRASONIC_H
+#define ULTRASONIC_H
 
 // ========================== Includes ===============================
 
-#include "ultrasonic.h"
-#include "soc/timer_group_reg.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-// ========================== Macros =================================
-
-#define TIMER_DIVIDER_VALUE   8000      /**< 80 MHz / 8000 = 10,000 ticks/sec (0.1 ms/tick). */
-#define TIMER_INCREMENT_MODE  (1 << 30) /**< Timer count-up mode bit in TCONFIG register. */
-#define TIMER_ENABLE          (1 << 31) /**< Timer enable bit in TCONFIG register. */
-#define MS_TO_TICKS(ms)       ((ms) * 10UL) /**< Convert milliseconds to timer ticks. */
-
-// ======================== Global Variables =========================
-
-static uint8_t  _trigPin;
-static uint8_t  _echoPin;
-static long     _duration;
-static int      _distance;
-static bool     _wasClose          = false; /**< Whether the object was in range last update. */
-static uint32_t _approachStartTick = 0;     /**< Timer tick when object first entered range. */
+#include <Arduino.h>
+#include <stdint.h>
 
 // ====================== Function Prototypes ========================
 
-static uint32_t _readTimer(void);
-
-// ====================== Function Implementations ===================
-
-// See ultrasonic.h for full interface documentation.
-void Ultrasonic_init(uint8_t trigPin, uint8_t echoPin) {
-    _trigPin = trigPin;
-    _echoPin = echoPin;
-
-    pinMode(_trigPin, OUTPUT);
-    pinMode(_echoPin, INPUT);
-
-    // Configure Timer Group 0, Timer 0
-    uint32_t timer_config = (TIMER_DIVIDER_VALUE << 13);
-    timer_config |= TIMER_INCREMENT_MODE;
-    timer_config |= TIMER_ENABLE;
-    *((volatile uint32_t *)TIMG_T0CONFIG_REG(0)) = timer_config;
-    *((volatile uint32_t *)TIMG_T0UPDATE_REG(0)) = 1;
-}
-
-// See ultrasonic.h for full interface documentation.
-void Ultrasonic_update(void) {
-    // Send 10 µs trigger pulse
-    digitalWrite(_trigPin, LOW);
-    delayMicroseconds(5);
-    digitalWrite(_trigPin, HIGH);
-    delayMicroseconds(10);
-    digitalWrite(_trigPin, LOW);
-
-    _duration = pulseIn(_echoPin, HIGH, 1000000);
-    _distance = _duration * 0.034 / 2; // speed of sound: 0.034 cm/µs, divide by 2 for round-trip
-}
-
-// See ultrasonic.h for full interface documentation.
-int Ultrasonic_getDistance(void) {
-    return _distance;
-}
-
-// See ultrasonic.h for full interface documentation.
-bool Ultrasonic_isLoitering(int distanceThresholdCm, unsigned long timeLimitMs) {
-    uint32_t currentTick = _readTimer();
-    uint32_t limitTicks  = (uint32_t)MS_TO_TICKS(timeLimitMs);
-
-    if (_distance <= distanceThresholdCm) {
-        if (!_wasClose) {
-            _approachStartTick = currentTick;
-            _wasClose = true;
-        }
-        if ((currentTick - _approachStartTick) >= limitTicks) {
-            return true;
-        }
-    } else {
-        _wasClose = false;
-    }
-
-    return false;
-}
+/**
+ * @brief Initializes the ultrasonic sensor pins and hardware timer.
+ *
+ * Configures the trigger pin as OUTPUT and echo pin as INPUT, then starts
+ * Timer Group 0, Timer 0 with an 8000 divider (10,000 ticks/sec).
+ *
+ * @param trigPin  GPIO pin connected to the sensor TRIG line.
+ * @param echoPin  GPIO pin connected to the sensor ECHO line.
+ */
+void Ultrasonic_init(uint8_t trigPin, uint8_t echoPin);
 
 /**
- * @brief Latches and reads the low 32 bits of Timer Group 0, Timer 0.
+ * @brief Triggers a distance measurement and updates the internal result.
  *
- * Writing 1 to TIMG_T0UPDATE_REG snapshots the live counter into the
- * readable lo/hi registers before the read.
- *
- * @return Current timer tick count (low 32 bits).
+ * Sends a 10 µs trigger pulse and measures the echo pulse width via
+ * @c pulseIn(). Should be called at 50 Hz from Ultrasonic_Task.
  */
-static uint32_t _readTimer(void) {
-    *((volatile uint32_t *)TIMG_T0UPDATE_REG(0)) = 1;
-    return *((volatile uint32_t *)TIMG_T0LO_REG(0));
+void Ultrasonic_update(void);
+
+/**
+ * @brief Returns the most recent distance measurement.
+ *
+ * @return Distance in centimeters from the last call to @c Ultrasonic_update().
+ */
+int Ultrasonic_getDistance(void);
+
+/**
+ * @brief Detects whether an object has been within range for too long.
+ *
+ * Uses the hardware timer to track how long the measured distance has
+ * continuously stayed at or below @p distanceThresholdCm. Resets the timer
+ * whenever the object moves out of range.
+ *
+ * @param distanceThresholdCm  Maximum distance (cm) that counts as "close".
+ * @param timeLimitMs          Duration (ms) before loitering is declared.
+ * @return @c true if an object has been within range for longer than @p timeLimitMs.
+ * @return @c false otherwise.
+ */
+bool Ultrasonic_isLoitering(int distanceThresholdCm, unsigned long timeLimitMs);
+
+#ifdef __cplusplus
 }
+#endif
+
+#endif // ULTRASONIC_H
