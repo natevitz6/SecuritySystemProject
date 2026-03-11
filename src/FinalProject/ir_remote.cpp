@@ -48,6 +48,7 @@ static bool     _pinReady      = false;
 static bool     _clearPressed  = false;
 static uint32_t _lastCommandTime = 0;    /**< Timestamp (ms) of last accepted IR command. */
 static uint8_t  _lastCode        = 0xFF; /**< Command code of the last accepted IR signal. */
+static bool _disarmPressed = false;
 
 // ====================== Function Prototypes ========================
 
@@ -65,6 +66,7 @@ void IRRemote_init(uint8_t receivePin) {
 bool IRRemote_update(void) {
     _pinReady     = false;
     _clearPressed = false;
+    _disarmPressed = false;
 
     if (!IrReceiver.decode()) return false;
 
@@ -86,6 +88,10 @@ bool IRRemote_update(void) {
     }
     if (code == IR_CODE_OK) {
         _pinReady = true;
+        return true;
+    }
+    if (code == IR_CODE_DISARM) {
+        _disarmPressed = true;
         return true;
     }
 
@@ -112,6 +118,10 @@ bool IRRemote_isPINCorrect(void) {
 // See ir_remote.h for full interface documentation.
 bool IRRemote_wasClearPressed(void) {
     return _clearPressed;
+}
+
+bool IRRemote_wasDisarmPressed(void) {
+    return _disarmPressed;
 }
 
 // See ir_remote.h for full interface documentation.

@@ -164,6 +164,7 @@ extern "C" {
     uint32_t Countdown_getSecondsRemaining(void);
     bool     Countdown_hasExpired(void);
     bool     Countdown_isActive(void);
+    bool IRRemote_wasDisarmPressed(void);
 }
 
 // ====================== Function Implementations ===================
@@ -369,7 +370,8 @@ void IR_Task(void *pvParameters) {
         system_message_t uiMsg;
 
         if (pinSubmitted) {
-            msg.type  = IRRemote_isPINCorrect() ? EVENT_ACCESS_GRANTED : EVENT_ACCESS_DENIED;
+            bool granted = IRRemote_isPINCorrect() || IRRemote_wasDisarmPressed();
+            msg.type  = granted ? EVENT_ACCESS_GRANTED : EVENT_ACCESS_DENIED;
             msg.value = 0;
             xQueueSend(sensorQueue, &msg, 0);
         }

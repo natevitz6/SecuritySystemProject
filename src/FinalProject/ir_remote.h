@@ -64,6 +64,14 @@ bool IRRemote_isPINCorrect(void);
 bool IRRemote_wasClearPressed(void);
 
 /**
+ * @brief Returns whether the disarm button was pressed during the last update.
+ *
+ * @return @c true if the disarm button was pressed this cycle.
+ * @return @c false otherwise.
+ */
+bool IRRemote_wasDisarmPressed(void);
+
+/**
  * @brief Returns the number of digits currently in the PIN entry buffer.
  *
  * Useful for driving a masked PIN progress display on the LCD.
