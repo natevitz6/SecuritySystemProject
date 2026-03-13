@@ -305,7 +305,7 @@ void SecurityController_Task(void *pvParameters) {
                         // hold so the goodbye message is visible
                         holdingDisplay     = true;
                         displayHoldStartMs = now;
-                    } else 
+                    }
                     break;
 
                 case STATE_ALARM:
@@ -516,7 +516,7 @@ void LCD_Task(void *pvParameters) {
     char lastLine1[17] = "";
 
     lcd.init();        // reinitialize from within the task
-    lcd.backlight();
+    //lcd.backlight();
 
     while (1) {
         //Serial.println("lcd task");
