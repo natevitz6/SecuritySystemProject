@@ -232,8 +232,8 @@ void SecurityController_Task(void *pvParameters) {
             if ((now - exitCooldownStartMs) >= EXIT_COOLDOWN) {
                 exitCooldownActive = false;
                 state = STATE_IDLE;
-                LCD_MSG(uiMsg, "  SYSTEM ARMED  ", " Scan or Enter  ");
-                SERIAL_MSG("  SYSTEM ARMED  ", " Scan or Enter  ");
+                LCD_MSG(uiMsg, "  SYSTEM ARMED  ", "");
+                SERIAL_MSG("  SYSTEM ARMED  ", "");
                 xQueueSend(uiQueue, &uiMsg, 0);
                 alarmMsg.type = EVENT_ACCESS_DENIED;
                 xQueueSend(alarmQueue, &alarmMsg, 0);
@@ -246,13 +246,13 @@ void SecurityController_Task(void *pvParameters) {
                 case STATE_IDLE:
                     if (msg.type == EVENT_PIR_MOTION) {
                         state = STATE_DISARMED;
-                        LCD_MSG(uiMsg, " Motion Detected", "Scan/PIN to Dsrm");
-                        SERIAL_MSG(" Motion Detected", "Scan/PIN to Dsrm");
+                        LCD_MSG(uiMsg, "Goodbye!", "");
+                        SERIAL_MSG("Goodbye!", "");
                         xQueueSend(uiQueue, &uiMsg, 0);
                     } else if (msg.type == EVENT_LOITER_MOTION) {
                         state = STATE_MOTION_DETECTED;
-                        LCD_MSG(uiMsg, " Loitering Alert ", "Scan/PIN:Silence");
-                        SERIAL_MSG(" Loitering Alert ", "Scan/PIN:Silence");
+                        LCD_MSG(uiMsg, "Person Detected", "Scan/Enter Pin");
+                        SERIAL_MSG("Person Detected", "Scan/Enter Pin");
                         xQueueSend(uiQueue, &uiMsg, 0);
                     }
                     break;
@@ -260,21 +260,21 @@ void SecurityController_Task(void *pvParameters) {
                 case STATE_MOTION_DETECTED:
                     if (msg.type == EVENT_LOITERING) {
                         state = STATE_ALARM;
-                        LCD_MSG(uiMsg, "!!! ALARM !!!   ", "Scan/PIN:Silence");
-                        SERIAL_MSG("!!! ALARM !!!   ", "Scan/PIN:Silence");
+                        LCD_MSG(uiMsg, "!!! ALARM !!!   ", "");
+                        SERIAL_MSG("!!! ALARM !!!   ", "");
                         xQueueSend(uiQueue, &uiMsg, 0);
                         alarmMsg.type = EVENT_ALARM_TRIGGER;
                         xQueueSend(alarmQueue, &alarmMsg, 0);
-                    } else if (msg.type == EVENT_PIR_CLEAR) {
-                        state = STATE_IDLE;
-                        LCD_MSG(uiMsg, "  SYSTEM ARMED  ", " Scan or Enter  ");
-                        SERIAL_MSG("  SYSTEM ARMED  ", " Scan or Enter  ");
+                    } else if (msg.type == EVENT_PIR_MOTION) {
+                        state = STATE_DISARMED;
+                        LCD_MSG(uiMsg, "Goodbye!", "");
+                        SERIAL_MSG("Goodbye!", "");
                         xQueueSend(uiQueue, &uiMsg, 0);
                     } else if (msg.type == EVENT_ACCESS_GRANTED) {
                         state = STATE_DISARMED;
                         exitCooldownActive = false;
-                        LCD_MSG(uiMsg, " Access Granted!", "  Welcome Back  ");
-                        SERIAL_MSG(" Access Granted!", "  Welcome Back  ");
+                        LCD_MSG(uiMsg, " Access Granted!", "");
+                        SERIAL_MSG(" Access Granted!", "");
                         xQueueSend(uiQueue, &uiMsg, 0);
                         alarmMsg.type = EVENT_ACCESS_GRANTED;
                         xQueueSend(alarmQueue, &alarmMsg, 0);
@@ -283,6 +283,8 @@ void SecurityController_Task(void *pvParameters) {
                         displayHoldStartMs = now;
                     } else if (msg.type == EVENT_ACCESS_DENIED) {
                         state = STATE_ALARM_PENDING;
+                        LCD_MSG(uiMsg, " Access Denied!", "");
+                        SERIAL_MSG(" Access Denied!", "");
                         cdCmd = CMD_COUNTDOWN_START;
                         xQueueSend(countdownQueue, &cdCmd, 0);
                     }
@@ -292,33 +294,33 @@ void SecurityController_Task(void *pvParameters) {
                     if (msg.type == EVENT_PIR_CLEAR) {
                         exitCooldownActive  = true;
                         exitCooldownStartMs = now;
-                        LCD_MSG(uiMsg, " Access Granted!", "   Goodbye!     ");
-                        SERIAL_MSG(" Access Granted!", "   Goodbye!     ");
+                        LCD_MSG(uiMsg, "Goodbye!", "");
+                        SERIAL_MSG("Goodbye!", "");
                         xQueueSend(uiQueue, &uiMsg, 0);
                         // hold so the goodbye message is visible
                         holdingDisplay     = true;
                         displayHoldStartMs = now;
                     } else if (msg.type == EVENT_PIR_MOTION) {
                         exitCooldownActive = false;
-                        LCD_MSG(uiMsg, " Access Granted!", "  Welcome Back  ");
-                        SERIAL_MSG(" Access Granted!", "  Welcome Back  ");
+                        LCD_MSG(uiMsg, "Goodbye!", "");
+                        SERIAL_MSG("Goodbye!", "");
                         xQueueSend(uiQueue, &uiMsg, 0);
                     }
                     break;
 
                 case STATE_ALARM:
                     if (msg.type == EVENT_ACCESS_GRANTED) {
-                        state = STATE_IDLE;
+                        state = STATE_DISARMED;
                         exitCooldownActive = false;
-                        LCD_MSG(uiMsg, " System Disarmed", "  Welcome Back  ");
-                        SERIAL_MSG(" System Disarmed", "  Welcome Back  ");
+                        LCD_MSG(uiMsg, " Access Granted!", "");
+                        SERIAL_MSG(" Access Granted!", "");
                         xQueueSend(uiQueue, &uiMsg, 0);
                         alarmMsg.type = EVENT_ALARM_CLEAR;
                         xQueueSend(alarmQueue, &alarmMsg, 0);
                         holdingDisplay     = true;
                         displayHoldStartMs = now;
                     } else if (msg.type == EVENT_ALARM_CLEAR) {
-                        state = STATE_IDLE;
+                        state = STATE_DISARMED;
                         exitCooldownActive = false;
                         LCD_MSG(uiMsg, " Admin Override ", "System Disarmed ");
                         SERIAL_MSG(" Admin Override ", "System Disarmed ");
@@ -336,8 +338,8 @@ void SecurityController_Task(void *pvParameters) {
                         exitCooldownActive = false;
                         cdCmd = CMD_COUNTDOWN_CANCEL;
                         xQueueSend(countdownQueue, &cdCmd, 0);
-                        LCD_MSG(uiMsg, " Access Granted!", "  Welcome Back  ");
-                        SERIAL_MSG(" Access Granted!", "  Welcome Back  ");
+                        LCD_MSG(uiMsg, "Access Granted! ", "");
+                        SERIAL_MSG("Access Granted! ", "");
                         xQueueSend(uiQueue, &uiMsg, 0);
                         alarmMsg.type = EVENT_ACCESS_GRANTED;
                         xQueueSend(alarmQueue, &alarmMsg, 0);
@@ -345,8 +347,8 @@ void SecurityController_Task(void *pvParameters) {
                         displayHoldStartMs = now;
                     } else if (msg.type == EVENT_COUNTDOWN_EXPIRED) {
                         state = STATE_ALARM;
-                        LCD_MSG(uiMsg, "!!! ALARM !!!   ", "Scan/PIN:Silence");
-                        SERIAL_MSG("!!! ALARM !!!   ", "Scan/PIN:Silence");
+                        LCD_MSG(uiMsg, "!!! ALARM !!! ", "");
+                        SERIAL_MSG("  !!! ALARM !!! ", "");
                         xQueueSend(uiQueue, &uiMsg, 0);
                         alarmMsg.type = EVENT_ALARM_TRIGGER;
                         xQueueSend(alarmQueue, &alarmMsg, 0);
@@ -451,18 +453,18 @@ void IR_Task(void *pvParameters) {
         // Update LCD with masked digit progress (e.g. "PIN: **  ")
         uint8_t digits = IRRemote_getDigitCount();
         if (digits > 0) {
-            char pinDisplay[17] = "PIN:            ";
+            char pinDisplay[17] = "Enter PIN:            ";
             for (uint8_t i = 0; i < digits; i++) {
-                pinDisplay[5 + i] = '*';
+                pinDisplay[10 + i] = '*';
             }
-            LCD_MSG(uiMsg, "  Enter PIN:    ", pinDisplay);
-            SERIAL_MSG("  Enter PIN:    ", pinDisplay);
+            LCD_MSG(uiMsg, pinDisplay, "");
+            SERIAL_MSG(pinDisplay, "");
             xQueueSend(uiQueue, &uiMsg, 0);
         }
 
         if (IRRemote_wasClearPressed()) {
-            LCD_MSG(uiMsg, "  Enter PIN:    ", "PIN: Cleared    ");
-            SERIAL_MSG("  Enter PIN:    ", "PIN: Cleared    ");
+            LCD_MSG(uiMsg, "PIN: Cleared    ", "");
+            SERIAL_MSG("PIN: Cleared    ", "");
             xQueueSend(uiQueue, &uiMsg, 0);
         }
 
@@ -488,20 +490,10 @@ void RFID_Task(void *pvParameters) {
         if (cardScanned) {
             //Serial.print("Scanned");
             system_message_t msg;
-            system_message_t uiMsg;
 
             msg.type = RFID_isAuthorized() ? EVENT_ACCESS_GRANTED : EVENT_ACCESS_DENIED;
 
-            if (RFID_isAuthorized()) {
-                LCD_MSG(uiMsg, " Access Granted!", "  Welcome Back  ");
-                SERIAL_MSG(" Access Granted!", "  Welcome Back  ");
-            } else {
-                LCD_MSG(uiMsg, " Access Denied! ", " Try Again...   ");
-                SERIAL_MSG(" Access Denied! ", " Try Again...   ");
-            }
-
             xQueueSend(sensorQueue, &msg, 0);
-            xQueueSend(uiQueue, &uiMsg, 0);
         }
 
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
@@ -664,9 +656,6 @@ void Countdown_Task(void *pvParameters) {
 
             if (Countdown_hasExpired()) {
                 counting = false;
-                system_message_t uiMsg;
-                LCD_MSG(uiMsg, "!!! ALARM !!!   ", "Scan/PIN:Silence");
-                SERIAL_MSG("!!! ALARM !!!   ", "Scan/PIN:Silence");
                 xQueueSend(uiQueue, &uiMsg, 0);
                 xQueueSend(sensorQueue, &expiredMsg, 0);
             }
@@ -687,13 +676,10 @@ void setup() {
     lcd.backlight();
     lcd.setCursor(0, 0);
     lcd.print("  SYSTEM ARMED  ");
-    lcd.setCursor(0, 1);
-    lcd.print(" Scan or Enter  ");
 
     // Mirror the startup message to the serial monitor
     Serial.println("----------------");
     Serial.println("  SYSTEM ARMED  ");
-    Serial.println(" Scan or Enter  ");
 
     pinMode(RED_LED_PIN,   OUTPUT);
     pinMode(GREEN_LED_PIN, OUTPUT);
