@@ -299,7 +299,14 @@ void SecurityController_Task(void *pvParameters) {
                     } else {
                         exitCooldownActive  = true;
                         exitCooldownStartMs = now;
+                        LCD_MSG(uiMsg, "Goodbye!", "");
+                        SERIAL_MSG("Goodbye!", "");
+                        xQueueSend(uiQueue, &uiMsg, 0);
+                        // hold so the goodbye message is visible
+                        holdingDisplay     = true;
+                        displayHoldStartMs = now;
                     }
+                    
                     break;
 
                 case STATE_ALARM:
@@ -510,7 +517,7 @@ void LCD_Task(void *pvParameters) {
     char lastLine1[17] = "";
 
     lcd.init();        // reinitialize from within the task
-    lcd.backlight();
+    //lcd.backlight();
 
     while (1) {
         //Serial.println("lcd task");
