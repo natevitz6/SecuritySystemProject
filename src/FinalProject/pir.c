@@ -23,7 +23,7 @@
  *  which is long enough to reject the brief glitches common on PIR outputs while
  *  still responding quickly to genuine motion events.
  */
-#define DEBOUNCE_COUNT 3
+#define DEBOUNCE_COUNT 10
 
 // ======================== Global Variables =========================
 
