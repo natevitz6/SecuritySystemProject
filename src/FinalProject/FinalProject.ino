@@ -523,6 +523,9 @@ void LCD_Task(void *pvParameters) {
     char lastLine0[17] = "";
     char lastLine1[17] = "";
 
+    lcd.init();        // reinitialize from within the task
+    lcd.backlight();
+
     while (1) {
         //Serial.println("lcd task");
         if (xQueueReceive(uiQueue, &uiMsg, portMAX_DELAY)) {
