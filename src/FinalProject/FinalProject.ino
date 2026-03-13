@@ -56,7 +56,7 @@
 #define MOSI_PIN             11   /**< SPI MOSI pin. */
 #define MISO_PIN             13   /**< SPI MISO pin. */
 #define ALARM_GRACE_PERIOD   20000 /**< Grace period (ms) before alarm triggers after denied entry. */
-#define EXIT_COOLDOWN        5000   /**< Time (ms) after exit before system re-arms. */
+#define EXIT_COOLDOWN        3000   /**< Time (ms) after exit before system re-arms. */
 
 // ======================== Global Variables =========================
 
@@ -291,7 +291,12 @@ void SecurityController_Task(void *pvParameters) {
                     break;
 
                 case STATE_DISARMED:
-                    if (msg.type == EVENT_PIR_CLEAR) {
+                    if (msg.type == EVENT_PIR_MOTION) {
+                        exitCooldownActive = false;
+                        LCD_MSG(uiMsg, "Goodbye!", "");
+                        SERIAL_MSG("Goodbye!", "");
+                        xQueueSend(uiQueue, &uiMsg, 0);
+                    } else {
                         exitCooldownActive  = true;
                         exitCooldownStartMs = now;
                         LCD_MSG(uiMsg, "Goodbye!", "");
@@ -300,12 +305,7 @@ void SecurityController_Task(void *pvParameters) {
                         // hold so the goodbye message is visible
                         holdingDisplay     = true;
                         displayHoldStartMs = now;
-                    } else if (msg.type == EVENT_PIR_MOTION) {
-                        exitCooldownActive = false;
-                        LCD_MSG(uiMsg, "Goodbye!", "");
-                        SERIAL_MSG("Goodbye!", "");
-                        xQueueSend(uiQueue, &uiMsg, 0);
-                    }
+                    } else 
                     break;
 
                 case STATE_ALARM:
