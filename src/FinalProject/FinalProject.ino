@@ -43,7 +43,7 @@
 #define TRIG_PIN             2    /**< Ultrasonic sensor TRIG pin. */
 #define ECHO_PIN             1    /**< Ultrasonic sensor ECHO pin. */
 #define LOITER_DISTANCE_CM   20   /**< Distance threshold (cm) for loitering detection. */
-#define LOITER_TIME_MS       5000 /**< Time (ms) within range before loitering is declared. */
+#define LOITER_TIME_MS       20000 /**< Time (ms) within range before loitering is declared. */
 #define PIR_PIN              3    /**< PIR sensor signal pin. */
 #define PIN_LENGTH           4    /**< IR remote PIN length. */
 #define LED_PIN              7    /**< PIR activity indicator LED pin. */
@@ -55,8 +55,8 @@
 #define SCK_PIN              12   /**< SPI clock pin. */
 #define MOSI_PIN             11   /**< SPI MOSI pin. */
 #define MISO_PIN             13   /**< SPI MISO pin. */
-#define ALARM_GRACE_PERIOD_MS 10000 /**< Grace period (ms) before alarm triggers after denied entry. */
-#define EXIT_COOLDOWN_MS     5000   /**< Time (ms) after exit before system re-arms. */
+#define ALARM_GRACE_PERIOD   20000 /**< Grace period (ms) before alarm triggers after denied entry. */
+#define EXIT_COOLDOWN        5000   /**< Time (ms) after exit before system re-arms. */
 
 // ======================== Global Variables =========================
 
@@ -229,7 +229,7 @@ void SecurityController_Task(void *pvParameters) {
 
         // Re-arm after exit cooldown
         if (exitCooldownActive && state == STATE_DISARMED) {
-            if ((now - exitCooldownStartMs) >= EXIT_COOLDOWN_MS) {
+            if ((now - exitCooldownStartMs) >= EXIT_COOLDOWN) {
                 exitCooldownActive = false;
                 state = STATE_IDLE;
                 LCD_MSG(uiMsg, "  SYSTEM ARMED  ", " Scan or Enter  ");
@@ -639,7 +639,7 @@ void Countdown_Task(void *pvParameters) {
                                        counting ? 0 : portMAX_DELAY);
         if (got == pdTRUE) {
             if (cmd == CMD_COUNTDOWN_START) {
-                Countdown_start(ALARM_GRACE_PERIOD_MS);
+                Countdown_start(ALARM_GRACE_PERIOD);
                 lastSecond = Countdown_getSecondsRemaining();
                 counting   = true;
             } else if (cmd == CMD_COUNTDOWN_CANCEL) {
