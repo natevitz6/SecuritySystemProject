@@ -309,17 +309,7 @@ void SecurityController_Task(void *pvParameters) {
                         LCD_MSG(uiMsg, " Access Granted!", "");
                         SERIAL_MSG(" Access Granted!", "");
                         xQueueSend(uiQueue, &uiMsg, 0);
-                        alarmMsg.type = EVENT_ALARM_CLEAR;
-                        xQueueSend(alarmQueue, &alarmMsg, 0);
-                        holdingDisplay     = true;
-                        displayHoldStartMs = now;
-                    } else if (msg.type == EVENT_ALARM_CLEAR) {
-                        state = STATE_DISARMED;
-                        exitCooldownActive = false;
-                        LCD_MSG(uiMsg, " Admin Override ", "System Disarmed ");
-                        SERIAL_MSG(" Admin Override ", "System Disarmed ");
-                        xQueueSend(uiQueue, &uiMsg, 0);
-                        alarmMsg.type = EVENT_ALARM_CLEAR;
+                        alarmMsg.type = EVENT_ACCESS_GRANTED;
                         xQueueSend(alarmQueue, &alarmMsg, 0);
                         holdingDisplay     = true;
                         displayHoldStartMs = now;
@@ -564,13 +554,6 @@ void Alarm_Task(void *pvParameters) {
                 case EVENT_ALARM_TRIGGER:
                     alarmActive   = true;
                     accessGranted = false;
-                    break;
-                case EVENT_ALARM_CLEAR:
-                    if (alarmActive) {
-                        alarmActive = false;
-                        ledState    = false;
-                        digitalWrite(RED_LED_PIN, HIGH);
-                    }
                     break;
                 case EVENT_ACCESS_GRANTED:
                     accessGranted = true;
