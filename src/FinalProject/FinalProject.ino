@@ -42,7 +42,7 @@
 
 #define TRIG_PIN             2    /**< Ultrasonic sensor TRIG pin. */
 #define ECHO_PIN             1    /**< Ultrasonic sensor ECHO pin. */
-#define LOITER_DISTANCE_CM   20   /**< Distance threshold (cm) for loitering detection. */
+#define LOITER_DISTANCE_CM   10   /**< Distance threshold (cm) for loitering detection. */
 #define LOITER_TIME_MS       10000 /**< Time (ms) within range before loitering is declared. */
 #define PIR_PIN              3    /**< PIR sensor signal pin. */
 #define PIN_LENGTH           4    /**< IR remote PIN length. */
@@ -291,7 +291,7 @@ void SecurityController_Task(void *pvParameters) {
                     } else if (msg.type == EVENT_LOITER_CLEAR) {
                         state = STATE_IDLE;
                         LCD_MSG(uiMsg, "  SYSTEM ARMED  ", "");
-                        SERIAL_MSG("  SYSTEM ARMED  ", "");
+                        SERIAL_MSG("  SYSTEM ARMED  Loiter clear", "");
                         xQueueSend(uiQueue, &uiMsg, 0);
                     }
                     break;
@@ -406,7 +406,7 @@ void Ultrasonic_Task(void *pvParameters) {
             msg.type  = EVENT_LOITERING;
             msg.value = dist;
             xQueueSend(sensorQueue, &msg, 0);
-        } else if (dist < LOITER_DISTANCE_CM) {
+        } else if (dist > LOITER_DISTANCE_CM) {
             system_message_t msg;
             msg.type  = EVENT_LOITER_CLEAR;
             msg.value = dist;

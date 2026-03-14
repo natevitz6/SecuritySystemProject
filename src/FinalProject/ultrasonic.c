@@ -61,7 +61,7 @@ void Ultrasonic_update(void) {
     delayMicroseconds(10);
     digitalWrite(_trigPin, LOW);
 
-    _duration = pulseIn(_echoPin, HIGH, 30000);
+    _duration = pulseIn(_echoPin, HIGH, 2000);
     _distance = _duration * 0.034 / 2; // speed of sound: 0.034 cm/µs, divide by 2 for round-trip
 }
 
