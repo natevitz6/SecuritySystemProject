@@ -78,6 +78,7 @@ typedef enum {
     EVENT_DISTANCE_UPDATE,   /**< New ultrasonic distance reading available. */
     EVENT_LOITER_MOTION,     /**< Object within range of door. */
     EVENT_LOITERING,         /**< Object within range longer than LOITER_TIME_MS. */
+    EVENT_LOITER_CLEAR,      /**< Object moved out of range. */
     EVENT_DISPLAY_UPDATE,    /**< New content ready for the LCD display. */
     EVENT_ALARM_TRIGGER,     /**< Alarm should activate. */
     EVENT_ALARM_CLEAR,       /**< Alarm should deactivate. */
@@ -287,6 +288,11 @@ void SecurityController_Task(void *pvParameters) {
                         SERIAL_MSG(" Access Denied!", "");
                         cdCmd = CMD_COUNTDOWN_START;
                         xQueueSend(countdownQueue, &cdCmd, 0);
+                    } else if (msg.type == EVENT_LOITER_CLEAR) {
+                        state = STATE_IDLE;
+                        LCD_MSG(uiMsg, "  SYSTEM ARMED  ", "");
+                        SERIAL_MSG("  SYSTEM ARMED  ", "");
+                        xQueueSend(uiQueue, &uiMsg, 0);
                     }
                     break;
 
@@ -398,6 +404,11 @@ void Ultrasonic_Task(void *pvParameters) {
         } else if (Ultrasonic_isLoitering(LOITER_DISTANCE_CM, LOITER_TIME_MS)) {
             system_message_t msg;
             msg.type  = EVENT_LOITERING;
+            msg.value = dist;
+            xQueueSend(sensorQueue, &msg, 0);
+        } else if (dist < LOITER_DISTANCE_CM) {
+            system_message_t msg;
+            msg.type  = EVENT_LOITER_CLEAR;
             msg.value = dist;
             xQueueSend(sensorQueue, &msg, 0);
         }
