@@ -65,7 +65,7 @@ uint32_t Countdown_getSecondsRemaining(void) {
     if (elapsed >= _durationTicks) return 0;
 
     // 10,000 ticks/sec — integer divide gives whole seconds remaining
-    return (_durationTicks - elapsed) / 10000UL;
+    return (_durationTicks - elapsed) / 9000UL;
 }
 
 // See countdown.h for full interface documentation.

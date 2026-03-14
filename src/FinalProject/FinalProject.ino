@@ -43,7 +43,7 @@
 #define TRIG_PIN             2    /**< Ultrasonic sensor TRIG pin. */
 #define ECHO_PIN             1    /**< Ultrasonic sensor ECHO pin. */
 #define LOITER_DISTANCE_CM   20   /**< Distance threshold (cm) for loitering detection. */
-#define LOITER_TIME_MS       20000 /**< Time (ms) within range before loitering is declared. */
+#define LOITER_TIME_MS       10000 /**< Time (ms) within range before loitering is declared. */
 #define PIR_PIN              3    /**< PIR sensor signal pin. */
 #define PIN_LENGTH           4    /**< IR remote PIN length. */
 #define LED_PIN              7    /**< PIR activity indicator LED pin. */
@@ -55,7 +55,7 @@
 #define SCK_PIN              12   /**< SPI clock pin. */
 #define MOSI_PIN             11   /**< SPI MOSI pin. */
 #define MISO_PIN             13   /**< SPI MISO pin. */
-#define ALARM_GRACE_PERIOD   20000 /**< Grace period (ms) before alarm triggers after denied entry. */
+#define ALARM_GRACE_PERIOD   9000 /**< Grace period (ms) before alarm triggers after denied entry. */
 #define EXIT_COOLDOWN        3000   /**< Time (ms) after exit before system re-arms. */
 
 // ======================== Global Variables =========================
@@ -625,7 +625,7 @@ void Countdown_Task(void *pvParameters) {
                 system_message_t uiMsg;
                 LCD_MSG(uiMsg, "!! DISARM NOW !!", "                ");
                 snprintf(uiMsg.displayLine1, sizeof(uiMsg.displayLine1),
-                         "Scan/PIN %2lus left", (unsigned long)secsLeft);
+                         "Scan/PIN %1lus left", (unsigned long)secsLeft);
                 // Print the fully-formatted countdown line to serial as well
                 SERIAL_MSG("!! DISARM NOW !!", uiMsg.displayLine1);
                 xQueueSend(uiQueue, &uiMsg, 0);
