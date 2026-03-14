@@ -306,10 +306,6 @@ void SecurityController_Task(void *pvParameters) {
                         holdingDisplay     = true;
                         displayHoldStartMs = now;
                     }
-<<<<<<< HEAD
-                    
-=======
->>>>>>> 885e5c7 (fixed line length)
                     break;
 
                 case STATE_ALARM:
