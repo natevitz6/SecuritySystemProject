@@ -299,12 +299,6 @@ void SecurityController_Task(void *pvParameters) {
                     } else {
                         exitCooldownActive  = true;
                         exitCooldownStartMs = now;
-                        LCD_MSG(uiMsg, "Goodbye!", "");
-                        SERIAL_MSG("Goodbye!", "");
-                        xQueueSend(uiQueue, &uiMsg, 0);
-                        // hold so the goodbye message is visible
-                        holdingDisplay     = true;
-                        displayHoldStartMs = now;
                     }
                     break;
 
