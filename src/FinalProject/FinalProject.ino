@@ -299,13 +299,7 @@ void SecurityController_Task(void *pvParameters) {
                     } else {
                         exitCooldownActive  = true;
                         exitCooldownStartMs = now;
-                        LCD_MSG(uiMsg, "Goodbye!", "");
-                        SERIAL_MSG("Goodbye!", "");
-                        xQueueSend(uiQueue, &uiMsg, 0);
-                        // hold so the goodbye message is visible
-                        holdingDisplay     = true;
-                        displayHoldStartMs = now;
-                    } else 
+                    }
                     break;
 
                 case STATE_ALARM:
@@ -453,7 +447,7 @@ void IR_Task(void *pvParameters) {
         // Update LCD with masked digit progress (e.g. "PIN: **  ")
         uint8_t digits = IRRemote_getDigitCount();
         if (digits > 0) {
-            char pinDisplay[17] = "Enter PIN:   ";
+            char pinDisplay[17] = "Enter PIN:            ";
             for (uint8_t i = 0; i < digits; i++) {
                 pinDisplay[10 + i] = '*';
             }
@@ -656,6 +650,7 @@ void Countdown_Task(void *pvParameters) {
 
             if (Countdown_hasExpired()) {
                 counting = false;
+                xQueueSend(uiQueue, &uiMsg, 0);
                 xQueueSend(sensorQueue, &expiredMsg, 0);
             }
         }
