@@ -410,7 +410,8 @@ void Ultrasonic_Task(void *pvParameters) {
         //Serial.println("ultra task");
         Ultrasonic_update();
         int dist = Ultrasonic_getDistance();
-
+        Serial.print("Dist ");
+        Serial.println(dist);
         if (dist < LOITER_DISTANCE_CM) {
             system_message_t msg;
             msg.type  = EVENT_LOITER_MOTION;

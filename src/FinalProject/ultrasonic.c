@@ -62,7 +62,11 @@ void Ultrasonic_update(void) {
     digitalWrite(_trigPin, LOW);
 
     _duration = pulseIn(_echoPin, HIGH, 2000);
-    _distance = _duration * 0.034 / 2; // speed of sound: 0.034 cm/µs, divide by 2 for round-trip
+    if (_duration == 0) {
+        _distance = 999;
+    } else {
+        _distance = _duration * 0.034 / 2; // speed of sound: 0.034 cm/µs, divide by 2 for round-trip
+    }
 }
 
 // See ultrasonic.h for full interface documentation.
