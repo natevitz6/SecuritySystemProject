@@ -250,6 +250,8 @@ void SecurityController_Task(void *pvParameters) {
                         LCD_MSG(uiMsg, "Goodbye!", "");
                         SERIAL_MSG("Goodbye!", "");
                         xQueueSend(uiQueue, &uiMsg, 0);
+                        alarmMsg.type = EVENT_ACCESS_GRANTED;
+                        xQueueSend(alarmQueue, &alarmMsg, 0);
                     } else if (msg.type == EVENT_LOITER_MOTION) {
                         state = STATE_MOTION_DETECTED;
                         LCD_MSG(uiMsg, "Person Detected", "Scan/Enter Pin");
@@ -260,17 +262,19 @@ void SecurityController_Task(void *pvParameters) {
 
                 case STATE_MOTION_DETECTED:
                     if (msg.type == EVENT_LOITERING) {
-                        state = STATE_ALARM;
-                        LCD_MSG(uiMsg, "!!! ALARM !!!   ", "");
-                        SERIAL_MSG("!!! ALARM !!!   ", "");
+                        state = STATE_ALARM_PENDING;
+                        LCD_MSG(uiMsg, " Loiter Detected!", "");
+                        SERIAL_MSG(" Loiter Detected!", "");
                         xQueueSend(uiQueue, &uiMsg, 0);
-                        alarmMsg.type = EVENT_ALARM_TRIGGER;
-                        xQueueSend(alarmQueue, &alarmMsg, 0);
+                        cdCmd = CMD_COUNTDOWN_START;
+                        xQueueSend(countdownQueue, &cdCmd, 0);
                     } else if (msg.type == EVENT_PIR_MOTION) {
                         state = STATE_DISARMED;
                         LCD_MSG(uiMsg, "Goodbye!", "");
                         SERIAL_MSG("Goodbye!", "");
                         xQueueSend(uiQueue, &uiMsg, 0);
+                        alarmMsg.type = EVENT_ACCESS_GRANTED;
+                        xQueueSend(alarmQueue, &alarmMsg, 0);
                     } else if (msg.type == EVENT_ACCESS_GRANTED) {
                         state = STATE_DISARMED;
                         exitCooldownActive = false;
@@ -342,6 +346,16 @@ void SecurityController_Task(void *pvParameters) {
                         xQueueSend(uiQueue, &uiMsg, 0);
                         alarmMsg.type = EVENT_ALARM_TRIGGER;
                         xQueueSend(alarmQueue, &alarmMsg, 0);
+                    } else if (msg.type == EVENT_PIR_MOTION) {
+                        state = STATE_DISARMED;
+                        exitCooldownActive = false;
+                        cdCmd = CMD_COUNTDOWN_CANCEL;
+                        xQueueSend(countdownQueue, &cdCmd, 0);
+                        LCD_MSG(uiMsg, "Goodbye!", "");
+                        SERIAL_MSG("Goodbye!", "");
+                        xQueueSend(uiQueue, &uiMsg, 0);
+                        alarmMsg.type = EVENT_ACCESS_GRANTED;
+                        xQueueSend(alarmQueue, &alarmMsg, 0);
                     }
                     break;
             }
@@ -406,7 +420,7 @@ void Ultrasonic_Task(void *pvParameters) {
             msg.type  = EVENT_LOITERING;
             msg.value = dist;
             xQueueSend(sensorQueue, &msg, 0);
-        } else if (dist < LOITER_DISTANCE_CM) {
+        } else if (dist > LOITER_DISTANCE_CM) {
             system_message_t msg;
             msg.type  = EVENT_LOITER_CLEAR;
             msg.value = dist;
