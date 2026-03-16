@@ -80,6 +80,7 @@ typedef enum {
     EVENT_LOITERING,         /**< Object within range longer than LOITER_TIME_MS. */
     EVENT_LOITER_CLEAR,      /**< Object moved out of range. */
     EVENT_DISPLAY_UPDATE,    /**< New content ready for the LCD display. */
+    EVENT_PIN_TIMEOUT,       /**< Countdown expired without successful authentication. */
     EVENT_ALARM_TRIGGER,     /**< Alarm should activate. */
     EVENT_ALARM_CLEAR,       /**< Alarm should deactivate. */
     EVENT_ACCESS_GRANTED,    /**< Valid PIN or RFID credential presented. */
@@ -298,6 +299,9 @@ void SecurityController_Task(void *pvParameters) {
                         LCD_MSG(uiMsg, "  SYSTEM ARMED  ", "");
                         SERIAL_MSG("  SYSTEM ARMED  Loiter clear", "");
                         xQueueSend(uiQueue, &uiMsg, 0);
+                    } else if (msg.type == EVENT_PIN_TIMEOUT) {
+                        LCD_MSG(uiMsg, "Person Detected", "Scan/Enter Pin");
+                        xQueueSend(uiQueue, &uiMsg, 0);
                     }
                     break;
 
@@ -324,6 +328,9 @@ void SecurityController_Task(void *pvParameters) {
                         xQueueSend(alarmQueue, &alarmMsg, 0);
                         holdingDisplay     = true;
                         displayHoldStartMs = now;
+                    } else if (msg.type == EVENT_PIN_TIMEOUT) {
+                        LCD_MSG(uiMsg, "!!! ALARM !!!   ", "");
+                        xQueueSend(uiQueue, &uiMsg, 0);
                     }
                     break;
 
@@ -443,12 +450,13 @@ void Ultrasonic_Task(void *pvParameters) {
  * @param pvParameters  Unused FreeRTOS task parameter.
  */
 void IR_Task(void *pvParameters) {
-   
     TickType_t xLastWakeTime = xTaskGetTickCount();
     const TickType_t xFrequency = pdMS_TO_TICKS(16);
+    uint32_t lastDigitTimeMs = 0;
+    bool pinInProgress = false;
+    uint8_t lastDigitCount = 0;
 
     while (1) {
-        //Serial.println("ir task");
         bool pinSubmitted = IRRemote_update();
 
         system_message_t msg;
@@ -459,10 +467,13 @@ void IR_Task(void *pvParameters) {
             msg.type  = granted ? EVENT_ACCESS_GRANTED : EVENT_ACCESS_DENIED;
             msg.value = 0;
             xQueueSend(sensorQueue, &msg, 0);
+            pinInProgress  = false;
+            lastDigitCount = 0;
         }
 
-        // Update LCD with masked digit progress (e.g. "PIN: **  ")
         uint8_t digits = IRRemote_getDigitCount();
+        uint32_t now = (uint32_t)(esp_timer_get_time() / 1000ULL);
+
         if (digits > 0) {
             char pinDisplay[17] = "Enter PIN:      ";
             for (uint8_t i = 0; i < digits; i++) {
@@ -471,13 +482,30 @@ void IR_Task(void *pvParameters) {
             LCD_MSG(uiMsg, pinDisplay, "");
             SERIAL_MSG(pinDisplay, "");
             xQueueSend(uiQueue, &uiMsg, 0);
+
+            if (digits != lastDigitCount) {
+                // A new digit was just pressed, reset the timeout
+                lastDigitTimeMs = now;
+                pinInProgress   = true;
+            }
         }
 
         if (IRRemote_wasClearPressed()) {
             LCD_MSG(uiMsg, "PIN: Cleared    ", "");
             SERIAL_MSG("PIN: Cleared    ", "");
             xQueueSend(uiQueue, &uiMsg, 0);
+            pinInProgress   = false;
+            lastDigitTimeMs = 0;
         }
+
+        if (pinInProgress && digits > 0 &&
+            (now - lastDigitTimeMs) > 5000) {
+            pinInProgress = false;
+            msg.type = EVENT_PIN_TIMEOUT;
+            xQueueSend(sensorQueue, &msg, 0);
+        }
+
+        lastDigitCount = digits;
 
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
     }
