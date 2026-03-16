@@ -292,6 +292,7 @@ void SecurityController_Task(void *pvParameters) {
                         state = STATE_ALARM_PENDING;
                         LCD_MSG(uiMsg, " Access Denied!", "");
                         SERIAL_MSG(" Access Denied!", "");
+                        xQueueSend(uiQueue, &uiMsg, 0);
                         cdCmd = CMD_COUNTDOWN_START;
                         xQueueSend(countdownQueue, &cdCmd, 0);
                     } else if (msg.type == EVENT_LOITER_CLEAR) {
