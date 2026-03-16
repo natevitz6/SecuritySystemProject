@@ -85,11 +85,7 @@ typedef enum {
     EVENT_ALARM_CLEAR,       /**< Alarm should deactivate. */
     EVENT_ACCESS_GRANTED,    /**< Valid PIN or RFID credential presented. */
     EVENT_ACCESS_DENIED,     /**< Invalid PIN or RFID credential presented. */
-    EVENT_COUNTDOWN_EXPIRED,  /**< Grace-period countdown reached zero. */
-    EVENT_PIN_DIGIT,         /**< A digit was added to the PIN entry buffer. */
-    EVENT_PIN_CLEAR,         /**< The PIN entry buffer was cleared via the CLR button. */
-    EVENT_PIN_DISARM,         /**< The dedicated disarm button was pressed on the remote. */
-    EVENT_PIN
+    EVENT_COUNTDOWN_EXPIRED  /**< Grace-period countdown reached zero. */
 } system_event_t;
 
 /**
@@ -193,27 +189,6 @@ extern "C" {
 // ====================== Function Implementations ===================
 
 /**
- * @brief Builds and sends a masked PIN progress display through uiQueue.
- *
- * Renders "Enter PIN: ****" with @p digitCount asterisks and sends the
- * resulting EVENT_DISPLAY_UPDATE message to uiQueue. Called by
- * SecurityController_Task whenever it receives an EVENT_PIN_DIGIT event
- * in an authentication-active state.
- *
- * @param digitCount  Number of digits entered so far (0–PIN_LENGTH).
- */
-static void sendPINDisplay(uint8_t digitCount) {
-    system_message_t uiMsg;
-    char pinDisplay[17] = "Enter PIN:      ";
-    for (uint8_t i = 0; i < digitCount && i < PIN_LENGTH; i++) {
-        pinDisplay[10 + i] = '*';
-    }
-    LCD_MSG(uiMsg, pinDisplay, "");
-    SERIAL_MSG(pinDisplay, "");
-    xQueueSend(uiQueue, &uiMsg, 0);
-}
-
-/**
  * @brief Central security state machine task.
  *
  * Consumes events from sensorQueue and drives state transitions. Sends
@@ -269,42 +244,6 @@ void SecurityController_Task(void *pvParameters) {
 
         if (xQueueReceive(sensorQueue, &msg, pdMS_TO_TICKS(100))) {
             Serial.println(state);
-
-            bool authActive = (state == STATE_MOTION_DETECTED ||
-                               state == STATE_ALARM_PENDING   ||
-                               state == STATE_ALARM);
-
-            if (authActive && msg.type == EVENT_PIN_DIGIT) {
-                // msg.value carries the current digit count from IR_Task
-                sendPINDisplay((uint8_t)msg.value);
-                // Stay in current state — no transition.
-                continue;
-            }
-
-            if (authActive && msg.type == EVENT_PIN_CLEAR) {
-                LCD_MSG(uiMsg, "PIN: Cleared    ", "");
-                SERIAL_MSG("PIN: Cleared    ", "");
-                xQueueSend(uiQueue, &uiMsg, 0);
-                // Restore the contextual prompt after a short pause so the
-                // user knows they can start over.
-                vTaskDelay(pdMS_TO_TICKS(800));
-                if (state == STATE_MOTION_DETECTED) {
-                    LCD_MSG(uiMsg, "Person Detected", "Scan/Enter Pin");
-                } else {
-                    LCD_MSG(uiMsg, "!! DISARM NOW !!", "Scan/Enter Pin");
-                }
-                SERIAL_MSG(uiMsg.displayLine0, uiMsg.displayLine1);
-                xQueueSend(uiQueue, &uiMsg, 0);
-                continue;
-            }
-
-            if (authActive && msg.type == EVENT_PIN_DISARM) {
-                // IR_Task already verified this is the disarm button; treat it
-                // as an ACCESS_GRANTED event so the state machine can respond.
-                msg.type = EVENT_ACCESS_GRANTED;
-                // Fall through into the normal state-machine switch below.
-            }
-
             switch (state) {
 
                 case STATE_IDLE:
@@ -521,17 +460,17 @@ void IR_Task(void *pvParameters) {
     TickType_t xLastWakeTime = xTaskGetTickCount();
     const TickType_t xFrequency = pdMS_TO_TICKS(16);
     uint32_t lastDigitTimeMs = 0;
-    bool     pinInProgress   = false;
-    uint8_t  lastDigitCount  = 0;
+    bool pinInProgress = false;
+    uint8_t lastDigitCount = 0;
 
     while (1) {
         bool pinSubmitted = IRRemote_update();
 
         system_message_t msg;
+        system_message_t uiMsg;
 
-        // --- PIN submission (OK button) ---
         if (pinSubmitted) {
-            bool granted = IRRemote_isPINCorrect();
+            bool granted = IRRemote_isPINCorrect() || IRRemote_wasDisarmPressed();
             msg.type  = granted ? EVENT_ACCESS_GRANTED : EVENT_ACCESS_DENIED;
             msg.value = 0;
             xQueueSend(sensorQueue, &msg, 0);
@@ -539,46 +478,37 @@ void IR_Task(void *pvParameters) {
             lastDigitCount = 0;
         }
 
-        // --- Disarm button ---
-        if (IRRemote_wasDisarmPressed()) {
-            msg.type  = EVENT_PIN_DISARM;
-            msg.value = 0;
-            xQueueSend(sensorQueue, &msg, 0);
-            pinInProgress  = false;
-            lastDigitCount = 0;
+        uint8_t digits = IRRemote_getDigitCount();
+        uint32_t now = (uint32_t)(esp_timer_get_time() / 1000ULL);
+
+        if (digits > 0) {
+            char pinDisplay[17] = "Enter PIN:      ";
+            for (uint8_t i = 0; i < digits; i++) {
+                pinDisplay[10 + i] = '*';
+            }
+            LCD_MSG(uiMsg, pinDisplay, "");
+            SERIAL_MSG(pinDisplay, "");
+            xQueueSend(uiQueue, &uiMsg, 0);
+
+            if (digits != lastDigitCount) {
+                // A new digit was just pressed, reset the timeout
+                lastDigitTimeMs = now;
+                pinInProgress   = true;
+            }
         }
 
-        // --- CLR button ---
         if (IRRemote_wasClearPressed()) {
-            msg.type  = EVENT_PIN_CLEAR;
-            msg.value = 0;
-            xQueueSend(sensorQueue, &msg, 0);
+            LCD_MSG(uiMsg, "PIN: Cleared    ", "");
+            SERIAL_MSG("PIN: Cleared    ", "");
+            xQueueSend(uiQueue, &uiMsg, 0);
             pinInProgress   = false;
             lastDigitTimeMs = 0;
-            lastDigitCount  = 0;
         }
 
-        // --- Digit added ---
-        uint8_t digits = IRRemote_getDigitCount();
-        uint32_t now   = (uint32_t)(esp_timer_get_time() / 1000ULL);
-
-        if (digits != lastDigitCount && digits > lastDigitCount) {
-            // A new digit was just appended — notify the controller so it can
-            // render the updated masked display. Pass the current digit count
-            // in msg.value so the controller knows how many asterisks to show.
-            msg.type  = EVENT_PIN_DIGIT;
-            msg.value = (int)digits;
-            xQueueSend(sensorQueue, &msg, 0);
-            lastDigitTimeMs = now;
-            pinInProgress   = true;
-        }
-
-        // --- PIN entry timeout (5 s of inactivity) ---
         if (pinInProgress && digits > 0 &&
             (now - lastDigitTimeMs) > 5000) {
             pinInProgress = false;
-            msg.type  = EVENT_PIN_TIMEOUT;
-            msg.value = 0;
+            msg.type = EVENT_PIN_TIMEOUT;
             xQueueSend(sensorQueue, &msg, 0);
         }
 
