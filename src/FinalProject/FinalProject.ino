@@ -448,11 +448,12 @@ void Ultrasonic_Task(void *pvParameters) {
  *
  * @param pvParameters  Unused FreeRTOS task parameter.
  */
-vvoid IR_Task(void *pvParameters) {
+void IR_Task(void *pvParameters) {
     TickType_t xLastWakeTime = xTaskGetTickCount();
     const TickType_t xFrequency = pdMS_TO_TICKS(16);
     uint32_t lastDigitTimeMs = 0;
     bool pinInProgress = false;
+    uint8_t lastDigitCount = 0;
 
     while (1) {
         bool pinSubmitted = IRRemote_update();
@@ -465,7 +466,8 @@ vvoid IR_Task(void *pvParameters) {
             msg.type  = granted ? EVENT_ACCESS_GRANTED : EVENT_ACCESS_DENIED;
             msg.value = 0;
             xQueueSend(sensorQueue, &msg, 0);
-            pinInProgress = false;
+            pinInProgress  = false;
+            lastDigitCount = 0;
         }
 
         uint8_t digits = IRRemote_getDigitCount();
@@ -495,16 +497,14 @@ vvoid IR_Task(void *pvParameters) {
             lastDigitTimeMs = 0;
         }
 
-        // If a pin was started but no new digit in 5 seconds, abandon it
-        if (pinInProgress && digits == 0) {
-            pinInProgress = false;
-        }
         if (pinInProgress && digits > 0 &&
             (now - lastDigitTimeMs) > 5000) {
             pinInProgress = false;
             msg.type = EVENT_PIN_TIMEOUT;
             xQueueSend(sensorQueue, &msg, 0);
         }
+
+        lastDigitCount = digits;
 
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
     }
