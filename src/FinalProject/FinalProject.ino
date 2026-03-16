@@ -88,7 +88,8 @@ typedef enum {
     EVENT_COUNTDOWN_EXPIRED,  /**< Grace-period countdown reached zero. */
     EVENT_PIN_DIGIT,         /**< A digit was added to the PIN entry buffer. */
     EVENT_PIN_CLEAR,         /**< The PIN entry buffer was cleared via the CLR button. */
-    EVENT_PIN_DISARM         /**< The dedicated disarm button was pressed on the remote. */
+    EVENT_PIN_DISARM,         /**< The dedicated disarm button was pressed on the remote. */
+    EVENT_PIN
 } system_event_t;
 
 /**
