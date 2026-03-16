@@ -259,6 +259,8 @@ void SecurityController_Task(void *pvParameters) {
                         LCD_MSG(uiMsg, "Person Detected", "Scan/Enter Pin");
                         SERIAL_MSG("Person Detected", "Scan/Enter Pin");
                         xQueueSend(uiQueue, &uiMsg, 0);
+                    } else if (msg.type == EVENT_PIN) {
+                        state = STATE_MOTION_DETECTED;
                     }
                     break;
 
