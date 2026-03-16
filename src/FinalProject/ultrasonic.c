@@ -53,6 +53,7 @@ void Ultrasonic_init(uint8_t trigPin, uint8_t echoPin) {
 }
 
 // See ultrasonic.h for full interface documentation.
+
 void Ultrasonic_update(void) {
     // Send 10 µs trigger pulse
     digitalWrite(_trigPin, LOW);
@@ -61,7 +62,7 @@ void Ultrasonic_update(void) {
     delayMicroseconds(10);
     digitalWrite(_trigPin, LOW);
 
-    _duration = pulseIn(_echoPin, HIGH, 2000);
+    _duration = pulseIn(_echoPin, HIGH, 15000);
     if (_duration == 0) {
         _distance = 999;
     } else {
