@@ -412,24 +412,28 @@ void Ultrasonic_Task(void *pvParameters) {
     
     TickType_t xLastWakeTime = xTaskGetTickCount();
     const TickType_t xFrequency = pdMS_TO_TICKS(20);
+    uint32_t loiterWaitTime = 0;
 
     while (1) {
         //Serial.println("ultra task");
+        uint32_t now = (uint32_t)(esp_timer_get_time() / 1000ULL);
         Ultrasonic_update();
         int dist = Ultrasonic_getDistance();
         Serial.print("Dist ");
         Serial.println(dist);
-        if (dist < LOITER_DISTANCE_CM) {
-            system_message_t msg;
-            msg.type  = EVENT_LOITER_MOTION;
-            msg.value = dist;
-            xQueueSend(sensorQueue, &msg, 0);
-        } else if (Ultrasonic_isLoitering(LOITER_DISTANCE_CM, LOITER_TIME_MS)) {
+        
+        if (Ultrasonic_isLoitering(LOITER_DISTANCE_CM, LOITER_TIME_MS)) {
             system_message_t msg;
             msg.type  = EVENT_LOITERING;
             msg.value = dist;
             xQueueSend(sensorQueue, &msg, 0);
-        } else if (dist > LOITER_DISTANCE_CM) {
+        } else if (dist < LOITER_DISTANCE_CM) {
+            loiterWaitTime = now;
+            system_message_t msg;
+            msg.type  = EVENT_LOITER_MOTION;
+            msg.value = dist;
+            xQueueSend(sensorQueue, &msg, 0);
+        } else if ((dist > LOITER_DISTANCE_CM) && (now - loiterWaitTime > 500)) {
             system_message_t msg;
             msg.type  = EVENT_LOITER_CLEAR;
             msg.value = dist;
@@ -555,6 +559,8 @@ void LCD_Task(void *pvParameters) {
     char lastLine1[17] = "";
 
     lcd.init();        // reinitialize from within the task
+    lcd.setCursor(0, 0);
+    lcd.print("  SYSTEM ARMED  ");
     //lcd.backlight();
 
     while (1) {
