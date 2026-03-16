@@ -242,6 +242,7 @@ void SecurityController_Task(void *pvParameters) {
         }
 
         if (xQueueReceive(sensorQueue, &msg, pdMS_TO_TICKS(100))) {
+            Serial.println(state);
             switch (state) {
 
                 case STATE_IDLE:
@@ -301,14 +302,14 @@ void SecurityController_Task(void *pvParameters) {
                     break;
 
                 case STATE_DISARMED:
+                    if (!exitCooldownActive) {
+                        exitCooldownActive  = true;
+                        exitCooldownStartMs = now;
+                    }
                     if (msg.type == EVENT_PIR_MOTION) {
-                        exitCooldownActive = false;
                         LCD_MSG(uiMsg, "Goodbye!", "");
                         SERIAL_MSG("Goodbye!", "");
                         xQueueSend(uiQueue, &uiMsg, 0);
-                    } else {
-                        exitCooldownActive  = true;
-                        exitCooldownStartMs = now;
                     }
                     break;
 
