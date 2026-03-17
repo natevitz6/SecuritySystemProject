@@ -105,8 +105,6 @@ typedef enum {
  */
 typedef enum {
     CMD_COUNTDOWN_START,  /**< Start the grace-period countdown. */
-    CMD_COUNTDOWN_PAUSE,  /**< Pause the countdown for pin display. */
-    CMD_COUNTDOWN_RESUME, /**< Resume the countdown after pin display. */
     CMD_COUNTDOWN_CANCEL  /**< Cancel an in-progress countdown. */
 } countdown_cmd_t;
 
@@ -480,7 +478,6 @@ void IR_Task(void *pvParameters) {
 
         uint8_t digits = IRRemote_getDigitCount();
         uint32_t now = (uint32_t)(esp_timer_get_time() / 1000ULL);
-        countdown_cmd_t  cdPause;
 
         /*
         if (pinInProgress && digits > 0 &&
@@ -501,8 +498,6 @@ void IR_Task(void *pvParameters) {
             xQueueSend(sensorQueue, &msg, 0);
             pinInProgress  = false;
             lastDigitCount = 0;
-            cdPause = CMD_COUNTDOWN_RESUME;
-            xQueueSend(countdownQueue, &cdPause, 0);
         }
 
         
@@ -522,8 +517,6 @@ void IR_Task(void *pvParameters) {
                 // A new digit was just pressed, reset the timeout
                 lastDigitTimeMs = now;
                 pinInProgress   = true;
-                cdPause = CMD_COUNTDOWN_PAUSE;
-                xQueueSend(countdownQueue, &cdPause, 0);
             }
         }
 
@@ -533,8 +526,6 @@ void IR_Task(void *pvParameters) {
             xQueueSend(uiQueue, &uiMsg, 0);
             pinInProgress   = false;
             lastDigitTimeMs = 0;
-            cdPause = CMD_COUNTDOWN_RESUME;
-            xQueueSend(countdownQueue, &cdPause, 0);
         }
 
         
@@ -706,31 +697,27 @@ void Countdown_Task(void *pvParameters) {
             } else if (cmd == CMD_COUNTDOWN_CANCEL) {
                 Countdown_cancel();
                 counting = false;
-                pause = false;
-            } else if (cmd == CMD_COUNTDOWN_PAUSE) {
-                pause = true;
-            } else if (cmd == CMD_COUNTDOWN_RESUME) {
-                pause = false;
-            }
+            } 
         }
 
         if (counting) {
             uint32_t secsLeft = Countdown_getSecondsRemaining();
+            bool pinBeingEntered = (IRRemote_getDigitCount() > 0);
 
-            if ((secsLeft != lastSecond)  && (!pause)) {
-                lastSecond = secsLeft;
-                system_message_t uiMsg;
-                LCD_MSG(uiMsg, "!! DISARM NOW !!", "                ");
-                snprintf(uiMsg.displayLine1, sizeof(uiMsg.displayLine1),
-                         "Scan/PIN %1lus left", (unsigned long)secsLeft);
-                // Print the fully-formatted countdown line to serial as well
-                SERIAL_MSG("!! DISARM NOW !!", uiMsg.displayLine1);
-                xQueueSend(uiQueue, &uiMsg, 0);
+            if (secsLeft != lastSecond) {
+                lastSecond = secsLeft;          // always track the tick
+                if (!pinBeingEntered) {         // only display if no pin in progress
+                    system_message_t uiMsg;
+                    LCD_MSG(uiMsg, "!! DISARM NOW !!", "                ");
+                    snprintf(uiMsg.displayLine1, sizeof(uiMsg.displayLine1),
+                            "Scan/PIN %1lus left", (unsigned long)secsLeft);
+                    SERIAL_MSG("!! DISARM NOW !!", uiMsg.displayLine1);
+                    xQueueSend(uiQueue, &uiMsg, 0);
+                }
             }
 
             if (Countdown_hasExpired()) {
                 counting = false;
-                pause = false;
                 xQueueSend(sensorQueue, &expiredMsg, 0);
             }
         }
