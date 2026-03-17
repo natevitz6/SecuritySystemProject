@@ -341,7 +341,7 @@ void SecurityController_Task(void *pvParameters) {
                         xQueueSend(alarmQueue, &alarmMsg, 0);
                         holdingDisplay     = true;
                         displayHoldStartMs = now;
-                    } else if (msg.type == EVENT_PIN_TIMEOUT) {
+                    } else if (msg.type == EVENT_PIN_TIMEOUT || msg.type == EVENT_ACCESS_DENIED) {
                         LCD_MSG(uiMsg, "!!! ALARM !!!   ", "");
                         xQueueSend(uiQueue, &uiMsg, 0);
                     }
@@ -685,7 +685,6 @@ void Countdown_Task(void *pvParameters) {
     system_message_t expiredMsg;
     uint32_t         lastSecond = 0;
     bool             counting   = false;
-    bool             pause      = false; 
 
     expiredMsg.type = EVENT_COUNTDOWN_EXPIRED;
 
