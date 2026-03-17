@@ -436,7 +436,7 @@ void Ultrasonic_Task(void *pvParameters) {
         Serial.print("Dist ");
         Serial.print(dist);
         Serial.print(" Ultra time ");
-        Serial.printf("%\n" PRIu32 "\n", time);
+        Serial.printf("%d\n", time);
         
         if (Ultrasonic_isLoitering(LOITER_DISTANCE_CM, LOITER_TIME_MS)) {
             system_message_t msg;

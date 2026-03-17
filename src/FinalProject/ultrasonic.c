@@ -13,14 +13,13 @@
 
 #include "ultrasonic.h"
 #include "soc/timer_group_reg.h"
-
+#include "esp_timer.h"
+#include "ultrasonic.h"
+#include "soc/timer_group_reg.h"
 // ========================== Macros =================================
-
-#define TIMER_DIVIDER_VALUE   8000      /**< 80 MHz / 8000 = 10,000 ticks/sec (0.1 ms/tick). */
-#define TIMER_INCREMENT_MODE  (1 << 30) /**< Timer count-up mode bit in TCONFIG register. */
-#define TIMER_ENABLE          (1 << 31) /**< Timer enable bit in TCONFIG register. */
-//#define MS_TO_TICKS(ms)       ((ms) * 10UL) /**< Convert milliseconds to timer ticks. */
-
+// Use Timer GROUP 1 (not 0 — that's used by FreeRTOS)
+#define TIMER_GROUP      1
+#define TIMER_DIVIDER    8000   // 80MHz / 8000 = 10,000 ticks/sec (0.1ms per tick)
 // ======================== Global Variables =========================
 
 static uint8_t  _trigPin;
@@ -28,34 +27,41 @@ static uint8_t  _echoPin;
 static long     _duration;
 static int      _distance;
 static bool     _wasClose          = false; /**< Whether the object was in range last update. */
-static uint32_t _approachStartTick = 0;     /**< Timer tick when object first entered range. */
-static uint32_t _seenLast = 0;
-
+static uint64_t _approachStartUs = 0;
+static uint64_t _seenLastUs      = 0;
 // ====================== Function Prototypes ========================
 
 
 // ====================== Function Implementations ===================
 
 // See ultrasonic.h for full interface documentation.
+
+
+
+
 void Ultrasonic_init(uint8_t trigPin, uint8_t echoPin) {
     _trigPin = trigPin;
     _echoPin = echoPin;
-
     pinMode(_trigPin, OUTPUT);
     pinMode(_echoPin, INPUT);
 
-    // Configure Timer Group 0, Timer 0
-    *((volatile uint32_t *)TIMG_T0CONFIG_REG(0)) = 0;
-    uint32_t timer_config = 0;
-    timer_config |= (8000 << 13);   // divider: 80MHz / 8000 = 10,000 ticks/sec
-    timer_config |= (1 << 30);      // count up
-    timer_config |= (1UL << 31);
-    *((volatile uint32_t *)TIMG_T0LOADLO_REG(0)) = 0;
-    *((volatile uint32_t *)TIMG_T0LOADHI_REG(0)) = 0;
-    *((volatile uint32_t *)TIMG_T0LOAD_REG(0))   = 1; // trigger the load
+    // Reset the timer register first
+    *((volatile uint32_t *)TIMG_T0CONFIG_REG(TIMER_GROUP)) = 0;
 
-    // Step 4 — latch initial value
-    *((volatile uint32_t *)TIMG_T0UPDATE_REG(0)) = 1;
+    // Set divider [28:13], count-up [30], enable [31]
+    uint32_t cfg = 0;
+    cfg |= ((uint32_t)TIMER_DIVIDER << 13);
+    cfg |= (1UL << 30);  // count up
+    cfg |= (1UL << 31);  // enable
+    *((volatile uint32_t *)TIMG_T0CONFIG_REG(TIMER_GROUP)) = cfg;
+
+    // Load 0 into the counter
+    *((volatile uint32_t *)TIMG_T0LOADLO_REG(TIMER_GROUP)) = 0;
+    *((volatile uint32_t *)TIMG_T0LOADHI_REG(TIMER_GROUP)) = 0;
+    *((volatile uint32_t *)TIMG_T0LOAD_REG(TIMER_GROUP))   = 1;
+
+    // Latch initial value
+    *((volatile uint32_t *)TIMG_T0UPDATE_REG(TIMER_GROUP)) = 1;
 }
 
 // See ultrasonic.h for full interface documentation.
@@ -81,23 +87,25 @@ int Ultrasonic_getDistance(void) {
     return _distance;
 }
 
-// See ultrasonic.h for full interface documentation.
+
 bool Ultrasonic_isLoitering(int distanceThresholdCm, uint32_t timeLimitMs) {
-    uint32_t currentTick = readTimer();
-    uint32_t limitTicks  = timeLimitMs * 10UL;
+    uint64_t nowUs     = readTimer(); // microseconds since boot
+    uint64_t limitUs   = (uint64_t)timeLimitMs * 100ULL;
 
     if (_distance <= distanceThresholdCm) {
-        _seenLast = currentTick;
         if (!_wasClose) {
-            _approachStartTick = currentTick;
+            _approachStartUs = nowUs;
             _wasClose = true;
         }
-        if (((currentTick - _approachStartTick) >= limitTicks) && _wasClose) {
+        _seenLastUs = nowUs;
+
+        if ((nowUs - _approachStartUs) >= limitUs) {
             _wasClose = false;
             return true;
         }
-    } else if ((currentTick - _seenLast) > 3000) {
+    } else if ((nowUs - _seenLastUs) > 50000ULL) { // 500ms grace period
         _wasClose = false;
+        _approachStartUs = 0;
     }
 
     return false;
@@ -112,6 +120,6 @@ bool Ultrasonic_isLoitering(int distanceThresholdCm, uint32_t timeLimitMs) {
  * @return Current timer tick count (low 32 bits).
  */
 uint32_t readTimer(void) {
-    *((volatile uint32_t *)TIMG_T0UPDATE_REG(0)) = 1;
-    return *((volatile uint32_t *)TIMG_T0LO_REG(0));
+    *((volatile uint32_t *)TIMG_T0UPDATE_REG(TIMER_GROUP)) = 1;
+    return *((volatile uint32_t *)TIMG_T0LO_REG(TIMER_GROUP));
 }
