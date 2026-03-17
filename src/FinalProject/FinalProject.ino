@@ -706,6 +706,7 @@ void Countdown_Task(void *pvParameters) {
             } else if (cmd == CMD_COUNTDOWN_CANCEL) {
                 Countdown_cancel();
                 counting = false;
+                pause = false;
             } else if (cmd == CMD_COUNTDOWN_PAUSE) {
                 pause = true;
             } else if (cmd == CMD_COUNTDOWN_RESUME) {
