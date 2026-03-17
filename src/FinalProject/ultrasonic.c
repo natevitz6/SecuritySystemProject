@@ -45,10 +45,16 @@ void Ultrasonic_init(uint8_t trigPin, uint8_t echoPin) {
     pinMode(_echoPin, INPUT);
 
     // Configure Timer Group 0, Timer 0
-    uint32_t timer_config = (TIMER_DIVIDER_VALUE << 13);
-    timer_config |= TIMER_INCREMENT_MODE;
-    timer_config |= TIMER_ENABLE;
-    *((volatile uint32_t *)TIMG_T0CONFIG_REG(0)) = timer_config;
+    *((volatile uint32_t *)TIMG_T0CONFIG_REG(0)) = 0;
+    uint32_t timer_config = 0;
+    timer_config |= (8000 << 13);   // divider: 80MHz / 8000 = 10,000 ticks/sec
+    timer_config |= (1 << 30);      // count up
+    timer_config |= (1UL << 31);
+    *((volatile uint32_t *)TIMG_T0LOADLO_REG(0)) = 0;
+    *((volatile uint32_t *)TIMG_T0LOADHI_REG(0)) = 0;
+    *((volatile uint32_t *)TIMG_T0LOAD_REG(0))   = 1; // trigger the load
+
+    // Step 4 — latch initial value
     *((volatile uint32_t *)TIMG_T0UPDATE_REG(0)) = 1;
 }
 
@@ -78,7 +84,7 @@ int Ultrasonic_getDistance(void) {
 // See ultrasonic.h for full interface documentation.
 bool Ultrasonic_isLoitering(int distanceThresholdCm, uint32_t timeLimitMs) {
     uint32_t currentTick = readTimer();
-    //uint32_t limitTicks  = (uint32_t)MS_TO_TICKS(timeLimitMs);
+    uint32_t limitTicks  = timeLimitMs * 10UL;
 
     if (_distance <= distanceThresholdCm) {
         _seenLast = currentTick;
@@ -86,11 +92,11 @@ bool Ultrasonic_isLoitering(int distanceThresholdCm, uint32_t timeLimitMs) {
             _approachStartTick = currentTick;
             _wasClose = true;
         }
-        if (((currentTick - _approachStartTick) >= 150000) && _wasClose) {
+        if (((currentTick - _approachStartTick) >= limitTicks) && _wasClose) {
             _wasClose = false;
             return true;
         }
-    } else if ((currentTick - _seenLast) > 300) {
+    } else if ((currentTick - _seenLast) > 3000) {
         _wasClose = false;
     }
 
