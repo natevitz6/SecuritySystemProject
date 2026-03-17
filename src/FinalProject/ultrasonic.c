@@ -19,7 +19,7 @@
 #define TIMER_DIVIDER_VALUE   8000      /**< 80 MHz / 8000 = 10,000 ticks/sec (0.1 ms/tick). */
 #define TIMER_INCREMENT_MODE  (1 << 30) /**< Timer count-up mode bit in TCONFIG register. */
 #define TIMER_ENABLE          (1 << 31) /**< Timer enable bit in TCONFIG register. */
-#define MS_TO_TICKS(ms)       ((ms) * 10UL) /**< Convert milliseconds to timer ticks. */
+//#define MS_TO_TICKS(ms)       ((ms) * 10UL) /**< Convert milliseconds to timer ticks. */
 
 // ======================== Global Variables =========================
 
@@ -76,19 +76,22 @@ int Ultrasonic_getDistance(void) {
 }
 
 // See ultrasonic.h for full interface documentation.
-bool Ultrasonic_isLoitering(int distanceThresholdCm, unsigned long timeLimitMs) {
+bool Ultrasonic_isLoitering(int distanceThresholdCm, uint32_t timeLimitMs) {
     uint32_t currentTick = _readTimer();
-    uint32_t limitTicks  = (uint32_t)MS_TO_TICKS(timeLimitMs);
+    //uint32_t limitTicks  = (uint32_t)MS_TO_TICKS(timeLimitMs);
+    uint32_t seenLast = 0;
 
     if (_distance <= distanceThresholdCm) {
+        seenLast = currentTick;
         if (!_wasClose) {
             _approachStartTick = currentTick;
             _wasClose = true;
         }
-        if ((currentTick - _approachStartTick) >= limitTicks) {
+        if ((currentTick - _approachStartTick) >= timeLimitMs) {
+            _wasClose = false;
             return true;
         }
-    } else {
+    } else if ((currentTick - seenLast) > 300) {
         _wasClose = false;
     }
 

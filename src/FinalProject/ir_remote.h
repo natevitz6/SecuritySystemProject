@@ -55,6 +55,8 @@ bool IRRemote_update(void);
  */
 bool IRRemote_isPINCorrect(void);
 
+void accessGranted(void);
+
 /**
  * @brief Returns whether the clear button was pressed during the last update.
  *

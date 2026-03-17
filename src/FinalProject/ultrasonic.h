@@ -61,7 +61,7 @@ int Ultrasonic_getDistance(void);
  * @return @c true if an object has been within range for longer than @p timeLimitMs.
  * @return @c false otherwise.
  */
-bool Ultrasonic_isLoitering(int distanceThresholdCm, unsigned long timeLimitMs);
+bool Ultrasonic_isLoitering(int distanceThresholdCm, uint32_t timeLimitMs);
 
 #ifdef __cplusplus
 }

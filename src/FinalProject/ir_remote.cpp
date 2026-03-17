@@ -56,6 +56,10 @@ static uint8_t decodeDigit(uint8_t code);
 
 // ====================== Function Implementations ===================
 
+void accessGranted() {
+    _digitCount = 0;
+}
+
 // See ir_remote.h for full interface documentation.
 void IRRemote_init(uint8_t receivePin) {
     _receivePin = receivePin;
@@ -68,20 +72,27 @@ bool IRRemote_update(void) {
     _clearPressed = false;
     _disarmPressed = false;
 
-    if (!IrReceiver.decode()) return false;
+    uint32_t now = (uint32_t)(esp_timer_get_time() / 1000ULL);
+    if (!IrReceiver.decode()) {
+        if (((now - _lastCommandTime) > 3000) && _digitCount != 0) {
+            _digitCount = 0;
+            _clearPressed = true;
+        } 
+        return false;
+    }
 
     uint8_t code = IrReceiver.decodedIRData.command;
     IrReceiver.resume();
 
     // Suppress repeated identical codes held within the cooldown window
-    uint32_t now = (uint32_t)(esp_timer_get_time() / 1000ULL);
+    
     if ((code == _lastCode) && ((now - _lastCommandTime) < IR_COOLDOWN_MS)) {
         return false;
     }
     _lastCode        = code;
     _lastCommandTime = now;
 
-    if (code == IR_CODE_CLR) {
+    if (code == IR_CODE_CLR && _digitCount != 0) {
         _digitCount   = 0;
         _clearPressed = true;
         return false;

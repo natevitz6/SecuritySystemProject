@@ -85,7 +85,8 @@ typedef enum {
     EVENT_ALARM_CLEAR,       /**< Alarm should deactivate. */
     EVENT_ACCESS_GRANTED,    /**< Valid PIN or RFID credential presented. */
     EVENT_ACCESS_DENIED,     /**< Invalid PIN or RFID credential presented. */
-    EVENT_COUNTDOWN_EXPIRED  /**< Grace-period countdown reached zero. */
+    EVENT_COUNTDOWN_EXPIRED,  /**< Grace-period countdown reached zero. */
+    EVENT_PIN
 } system_event_t;
 
 /**
@@ -167,7 +168,7 @@ extern "C" {
     void Ultrasonic_init(uint8_t trigPin, uint8_t echoPin);
     void Ultrasonic_update(void);
     int  Ultrasonic_getDistance(void);
-    bool Ultrasonic_isLoitering(int distanceThresholdCm, unsigned long timeLimitMs);
+    bool Ultrasonic_isLoitering(int distanceThresholdCm, uint32_t timeLimitMs);
     void     IRRemote_init(uint8_t receivePin);
     bool     IRRemote_update(void);
     bool     IRRemote_isPINCorrect(void);
@@ -184,6 +185,7 @@ extern "C" {
     bool     Countdown_hasExpired(void);
     bool     Countdown_isActive(void);
     bool IRRemote_wasDisarmPressed(void);
+    void accessGranted(void);
 }
 
 // ====================== Function Implementations ===================
@@ -212,8 +214,10 @@ void SecurityController_Task(void *pvParameters) {
 
     // --- add these ---
     #define MIN_DISPLAY_MS 2000   // minimum ms to hold a feedback state
+    #define PIN_HOLD_MS 5000
     bool     holdingDisplay      = false;
     uint32_t displayHoldStartMs  = 0;
+    uint32_t pinDelay = 0;
     // -----------------
 
     while (1) {
@@ -261,11 +265,34 @@ void SecurityController_Task(void *pvParameters) {
                         xQueueSend(uiQueue, &uiMsg, 0);
                     } else if (msg.type == EVENT_PIN) {
                         state = STATE_MOTION_DETECTED;
+                        pinDelay = now;
                     }
                     break;
 
                 case STATE_MOTION_DETECTED:
-                    if (msg.type == EVENT_LOITERING) {
+                    if (msg.type == EVENT_ACCESS_GRANTED) {
+                        accessGranted();
+                        state = STATE_DISARMED;
+                        exitCooldownActive = false;
+                        LCD_MSG(uiMsg, " Access Granted!", "");
+                        SERIAL_MSG(" Access Granted!", "");
+                        xQueueSend(uiQueue, &uiMsg, 0);
+                        alarmMsg.type = EVENT_ACCESS_GRANTED;
+                        xQueueSend(alarmQueue, &alarmMsg, 0);
+                        // hold so the user can see the green LED and message
+                        holdingDisplay     = true;
+                        displayHoldStartMs = now;
+                    } else if (msg.type == EVENT_ACCESS_DENIED) {
+                        accessGranted();
+                        state = STATE_ALARM_PENDING;
+                        LCD_MSG(uiMsg, " Access Denied!", "");
+                        SERIAL_MSG(" Access Denied!", "");
+                        xQueueSend(uiQueue, &uiMsg, 0);
+                        cdCmd = CMD_COUNTDOWN_START;
+                        xQueueSend(countdownQueue, &cdCmd, 0);
+                    } else if ((now - pinDelay) < PIN_HOLD_MS) {
+                        state = STATE_MOTION_DETECTED;
+                    } else if (msg.type == EVENT_LOITERING) {
                         state = STATE_ALARM_PENDING;
                         LCD_MSG(uiMsg, " Loiter Detected!", "");
                         SERIAL_MSG(" Loiter Detected!", "");
@@ -279,24 +306,6 @@ void SecurityController_Task(void *pvParameters) {
                         xQueueSend(uiQueue, &uiMsg, 0);
                         alarmMsg.type = EVENT_ACCESS_GRANTED;
                         xQueueSend(alarmQueue, &alarmMsg, 0);
-                    } else if (msg.type == EVENT_ACCESS_GRANTED) {
-                        state = STATE_DISARMED;
-                        exitCooldownActive = false;
-                        LCD_MSG(uiMsg, " Access Granted!", "");
-                        SERIAL_MSG(" Access Granted!", "");
-                        xQueueSend(uiQueue, &uiMsg, 0);
-                        alarmMsg.type = EVENT_ACCESS_GRANTED;
-                        xQueueSend(alarmQueue, &alarmMsg, 0);
-                        // hold so the user can see the green LED and message
-                        holdingDisplay     = true;
-                        displayHoldStartMs = now;
-                    } else if (msg.type == EVENT_ACCESS_DENIED) {
-                        state = STATE_ALARM_PENDING;
-                        LCD_MSG(uiMsg, " Access Denied!", "");
-                        SERIAL_MSG(" Access Denied!", "");
-                        xQueueSend(uiQueue, &uiMsg, 0);
-                        cdCmd = CMD_COUNTDOWN_START;
-                        xQueueSend(countdownQueue, &cdCmd, 0);
                     } else if (msg.type == EVENT_LOITER_CLEAR) {
                         state = STATE_IDLE;
                         LCD_MSG(uiMsg, "  SYSTEM ARMED  ", "");
@@ -464,11 +473,24 @@ void IR_Task(void *pvParameters) {
     uint8_t lastDigitCount = 0;
 
     while (1) {
-        bool pinSubmitted = IRRemote_update();
-
         system_message_t msg;
         system_message_t uiMsg;
 
+        uint8_t digits = IRRemote_getDigitCount();
+        uint32_t now = (uint32_t)(esp_timer_get_time() / 1000ULL);
+
+        /*
+        if (pinInProgress && digits > 0 &&
+            (now - lastDigitTimeMs) > 3000) {
+            LCD_MSG(uiMsg, "PIN: Timeout    ", "");
+            SERIAL_MSG("PIN: Timeout    ", "");
+            xQueueSend(uiQueue, &uiMsg, 0);
+            pinInProgress   = false;
+            lastDigitTimeMs = 0;
+        }
+        */
+
+        bool pinSubmitted = IRRemote_update();
         if (pinSubmitted) {
             bool granted = IRRemote_isPINCorrect() || IRRemote_wasDisarmPressed();
             msg.type  = granted ? EVENT_ACCESS_GRANTED : EVENT_ACCESS_DENIED;
@@ -478,8 +500,7 @@ void IR_Task(void *pvParameters) {
             lastDigitCount = 0;
         }
 
-        uint8_t digits = IRRemote_getDigitCount();
-        uint32_t now = (uint32_t)(esp_timer_get_time() / 1000ULL);
+        
 
         if (digits > 0) {
             char pinDisplay[17] = "Enter PIN:      ";
@@ -488,6 +509,8 @@ void IR_Task(void *pvParameters) {
             }
             LCD_MSG(uiMsg, pinDisplay, "");
             SERIAL_MSG(pinDisplay, "");
+            msg.type = EVENT_PIN;
+            xQueueSend(sensorQueue, &msg, 0);
             xQueueSend(uiQueue, &uiMsg, 0);
 
             if (digits != lastDigitCount) {
@@ -505,12 +528,7 @@ void IR_Task(void *pvParameters) {
             lastDigitTimeMs = 0;
         }
 
-        if (pinInProgress && digits > 0 &&
-            (now - lastDigitTimeMs) > 5000) {
-            pinInProgress = false;
-            msg.type = EVENT_PIN_TIMEOUT;
-            xQueueSend(sensorQueue, &msg, 0);
-        }
+        
 
         lastDigitCount = digits;
 
