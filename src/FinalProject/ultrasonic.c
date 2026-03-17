@@ -29,6 +29,7 @@ static long     _duration;
 static int      _distance;
 static bool     _wasClose          = false; /**< Whether the object was in range last update. */
 static uint32_t _approachStartTick = 0;     /**< Timer tick when object first entered range. */
+static uint32_t _seenLast = 0;
 
 // ====================== Function Prototypes ========================
 
@@ -79,19 +80,18 @@ int Ultrasonic_getDistance(void) {
 bool Ultrasonic_isLoitering(int distanceThresholdCm, uint32_t timeLimitMs) {
     uint32_t currentTick = _readTimer();
     //uint32_t limitTicks  = (uint32_t)MS_TO_TICKS(timeLimitMs);
-    uint32_t seenLast = 0;
 
     if (_distance <= distanceThresholdCm) {
-        seenLast = currentTick;
+        _seenLast = currentTick;
         if (!_wasClose) {
             _approachStartTick = currentTick;
             _wasClose = true;
         }
-        if ((currentTick - _approachStartTick) >= timeLimitMs) {
+        if (((currentTick - _approachStartTick) >= 150000) && _wasClose) {
             _wasClose = false;
             return true;
         }
-    } else if ((currentTick - seenLast) > 300) {
+    } else if ((currentTick - _seenLast) > 300) {
         _wasClose = false;
     }
 
