@@ -63,6 +63,9 @@ int Ultrasonic_getDistance(void);
  */
 bool Ultrasonic_isLoitering(int distanceThresholdCm, uint32_t timeLimitMs);
 
+uint32_t readTimer(void);
+
+
 #ifdef __cplusplus
 }
 #endif

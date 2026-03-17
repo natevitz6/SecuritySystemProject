@@ -33,7 +33,6 @@ static uint32_t _seenLast = 0;
 
 // ====================== Function Prototypes ========================
 
-static uint32_t _readTimer(void);
 
 // ====================== Function Implementations ===================
 
@@ -78,7 +77,7 @@ int Ultrasonic_getDistance(void) {
 
 // See ultrasonic.h for full interface documentation.
 bool Ultrasonic_isLoitering(int distanceThresholdCm, uint32_t timeLimitMs) {
-    uint32_t currentTick = _readTimer();
+    uint32_t currentTick = readTimer();
     //uint32_t limitTicks  = (uint32_t)MS_TO_TICKS(timeLimitMs);
 
     if (_distance <= distanceThresholdCm) {
@@ -106,7 +105,7 @@ bool Ultrasonic_isLoitering(int distanceThresholdCm, uint32_t timeLimitMs) {
  *
  * @return Current timer tick count (low 32 bits).
  */
-static uint32_t _readTimer(void) {
+uint32_t readTimer(void) {
     *((volatile uint32_t *)TIMG_T0UPDATE_REG(0)) = 1;
     return *((volatile uint32_t *)TIMG_T0LO_REG(0));
 }

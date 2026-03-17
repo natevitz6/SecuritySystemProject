@@ -188,6 +188,7 @@ extern "C" {
     bool     Countdown_isActive(void);
     bool IRRemote_wasDisarmPressed(void);
     void accessGranted(void);
+    uint32_t readTimer(void);
 }
 
 // ====================== Function Implementations ===================
@@ -433,8 +434,11 @@ void Ultrasonic_Task(void *pvParameters) {
         uint32_t now = (uint32_t)(esp_timer_get_time() / 1000ULL);
         Ultrasonic_update();
         int dist = Ultrasonic_getDistance();
+        uint32_t time = readTimer();
         Serial.print("Dist ");
-        Serial.println(dist);
+        Serial.print(dist);
+        Serial.print(" Ultra time ");
+        Serial.printf("%\n" PRIu32 "\n", time);
         
         if (Ultrasonic_isLoitering(LOITER_DISTANCE_CM, LOITER_TIME_MS)) {
             system_message_t msg;
