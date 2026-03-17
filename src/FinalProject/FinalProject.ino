@@ -501,6 +501,8 @@ void IR_Task(void *pvParameters) {
             xQueueSend(sensorQueue, &msg, 0);
             pinInProgress  = false;
             lastDigitCount = 0;
+            cdPause = CMD_COUNTDOWN_RESUME;
+            xQueueSend(countdownQueue, &cdPause, 0);
         }
 
         
