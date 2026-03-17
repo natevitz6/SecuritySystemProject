@@ -717,7 +717,7 @@ void Countdown_Task(void *pvParameters) {
         if (counting) {
             uint32_t secsLeft = Countdown_getSecondsRemaining();
 
-            if (secsLeft != lastSecond  && !pause) {
+            if ((secsLeft != lastSecond)  && (!pause)) {
                 lastSecond = secsLeft;
                 system_message_t uiMsg;
                 LCD_MSG(uiMsg, "!! DISARM NOW !!", "                ");
@@ -730,6 +730,7 @@ void Countdown_Task(void *pvParameters) {
 
             if (Countdown_hasExpired()) {
                 counting = false;
+                pause = false;
                 xQueueSend(sensorQueue, &expiredMsg, 0);
             }
         }
