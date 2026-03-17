@@ -341,7 +341,7 @@ void SecurityController_Task(void *pvParameters) {
                         xQueueSend(alarmQueue, &alarmMsg, 0);
                         holdingDisplay     = true;
                         displayHoldStartMs = now;
-                    } else if (msg.type == EVENT_PIN_TIMEOUT) {
+                    } else if (msg.type == EVENT_PIN_TIMEOUT || msg.type == EVENT_ACCESS_DENIED) {
                         LCD_MSG(uiMsg, "!!! ALARM !!!   ", "");
                         xQueueSend(uiQueue, &uiMsg, 0);
                     }
