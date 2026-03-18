@@ -208,17 +208,17 @@ void SecurityController_Task(void *pvParameters) {
     while (1) {
         uint32_t now = (uint32_t)(esp_timer_get_time() / 1000ULL);
 
-        // Don't process any new sensor events while holding a display state
+        // Prevent new events from being processed while a feedback message is held on the display
         if (holdingDisplay) {
             if ((now - displayHoldStartMs) >= MIN_DISPLAY_MS) {
                 holdingDisplay = false;
             } else {
                 vTaskDelay(pdMS_TO_TICKS(50));
-                continue;  // skip queue receive entirely until hold expires
+                continue;  // Wait until display hold expires
             }
         }
 
-        // Re-arm after exit cooldown
+        // Handle exit cooldown: after disarm, system re-arms itself after cooldown period
         if (exitCooldownActive && state == STATE_DISARMED) {
             if ((now - exitCooldownStartMs) >= EXIT_COOLDOWN) {
                 exitCooldownActive = false;
@@ -230,27 +230,30 @@ void SecurityController_Task(void *pvParameters) {
             }
         }
 
+        // Main event loop: process incoming sensor/auth events
         if (xQueueReceive(sensorQueue, &msg, pdMS_TO_TICKS(100))) {
             switch (state) {
 
                 case STATE_IDLE:
+                    // System is armed, waiting for motion or PIN entry
                     if (msg.type == EVENT_PIR_MOTION) {
-                        state = STATE_DISARMED;
+                        state = STATE_DISARMED; // User leaving, disarm
                         LCD_MSG(uiMsg, "Goodbye!", "");
                         xQueueSend(uiQueue, &uiMsg, 0);
                         alarmMsg.type = EVENT_ACCESS_GRANTED;
                         xQueueSend(alarmQueue, &alarmMsg, 0);
                     } else if (msg.type == EVENT_LOITER_MOTION) {
-                        state = STATE_MOTION_DETECTED;
+                        state = STATE_MOTION_DETECTED; // Someone approaches
                         LCD_MSG(uiMsg, "Person Detected", "Scan/Enter Pin");
                         xQueueSend(uiQueue, &uiMsg, 0);
                     } else if (msg.type == EVENT_PIN) {
-                        state = STATE_MOTION_DETECTED;
+                        state = STATE_MOTION_DETECTED; // PIN entry started
                         pinDelay = now;
                     }
                     break;
 
                 case STATE_MOTION_DETECTED:
+                    // Awaiting authentication after motion detected
                     if (msg.type == EVENT_ACCESS_GRANTED) {
                         accessGranted();
                         state = STATE_DISARMED;
@@ -259,32 +262,31 @@ void SecurityController_Task(void *pvParameters) {
                         xQueueSend(uiQueue, &uiMsg, 0);
                         alarmMsg.type = EVENT_ACCESS_GRANTED;
                         xQueueSend(alarmQueue, &alarmMsg, 0);
-                        // hold so the user can see the green LED and message
-                        holdingDisplay     = true;
+                        holdingDisplay     = true; // Hold success message
                         displayHoldStartMs = now;
                     } else if (msg.type == EVENT_ACCESS_DENIED) {
                         accessGranted();
                         state = STATE_ALARM_PENDING;
                         LCD_MSG(uiMsg, " Access Denied!", "");
                         xQueueSend(uiQueue, &uiMsg, 0);
-                        cdCmd = CMD_COUNTDOWN_START;
+                        cdCmd = CMD_COUNTDOWN_START; // Start grace period
                         xQueueSend(countdownQueue, &cdCmd, 0);
                     } else if ((now - pinDelay) < PIN_HOLD_MS) {
-                        state = STATE_MOTION_DETECTED;
+                        state = STATE_MOTION_DETECTED; // Still within PIN entry window
                     } else if (msg.type == EVENT_LOITERING) {
-                        state = STATE_ALARM_PENDING;
+                        state = STATE_ALARM_PENDING; // Loitering triggers alarm pending
                         LCD_MSG(uiMsg, " Loiter Detected!", "");
                         xQueueSend(uiQueue, &uiMsg, 0);
                         cdCmd = CMD_COUNTDOWN_START;
                         xQueueSend(countdownQueue, &cdCmd, 0);
                     } else if (msg.type == EVENT_PIR_MOTION) {
-                        state = STATE_DISARMED;
+                        state = STATE_DISARMED; // User leaving
                         LCD_MSG(uiMsg, "Goodbye!", "");
                         xQueueSend(uiQueue, &uiMsg, 0);
                         alarmMsg.type = EVENT_ACCESS_GRANTED;
                         xQueueSend(alarmQueue, &alarmMsg, 0);
                     } else if (msg.type == EVENT_LOITER_CLEAR) {
-                        state = STATE_IDLE;
+                        state = STATE_IDLE; // Area cleared
                         LCD_MSG(uiMsg, "  SYSTEM ARMED  ", "");
                         xQueueSend(uiQueue, &uiMsg, 0);
                     } else if (msg.type == EVENT_PIN_TIMEOUT) {
@@ -294,9 +296,10 @@ void SecurityController_Task(void *pvParameters) {
                     break;
 
                 case STATE_DISARMED:
+                    // System is disarmed, waiting for user to leave
                     if (!exitCooldownActive) {
                         exitCooldownActive  = true;
-                        exitCooldownStartMs = now;
+                        exitCooldownStartMs = now; // Start cooldown timer
                     }
                     if (msg.type == EVENT_PIR_MOTION) {
                         LCD_MSG(uiMsg, "Goodbye!", "");
@@ -305,8 +308,9 @@ void SecurityController_Task(void *pvParameters) {
                     break;
 
                 case STATE_ALARM:
+                    // Alarm is active
                     if (msg.type == EVENT_ACCESS_GRANTED) {
-                        state = STATE_DISARMED;
+                        state = STATE_DISARMED; // Disarm on valid credential
                         exitCooldownActive = false;
                         LCD_MSG(uiMsg, " Access Granted!", "");
                         xQueueSend(uiQueue, &uiMsg, 0);
@@ -321,10 +325,11 @@ void SecurityController_Task(void *pvParameters) {
                     break;
 
                 case STATE_ALARM_PENDING:
+                    // Grace period running, waiting for valid credential or expiry
                     if (msg.type == EVENT_ACCESS_GRANTED) {
                         state = STATE_DISARMED;
                         exitCooldownActive = false;
-                        cdCmd = CMD_COUNTDOWN_CANCEL;
+                        cdCmd = CMD_COUNTDOWN_CANCEL; // Stop countdown
                         xQueueSend(countdownQueue, &cdCmd, 0);
                         LCD_MSG(uiMsg, "Access Granted! ", "");
                         xQueueSend(uiQueue, &uiMsg, 0);
@@ -333,7 +338,7 @@ void SecurityController_Task(void *pvParameters) {
                         holdingDisplay     = true;
                         displayHoldStartMs = now;
                     } else if (msg.type == EVENT_COUNTDOWN_EXPIRED) {
-                        state = STATE_ALARM;
+                        state = STATE_ALARM; // Grace period expired, trigger alarm
                         LCD_MSG(uiMsg, "!!! ALARM !!! ", "");
                         xQueueSend(uiQueue, &uiMsg, 0);
                         alarmMsg.type = EVENT_ALARM_TRIGGER;
