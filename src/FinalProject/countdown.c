@@ -45,10 +45,10 @@ void Countdown_init(void) {
 
 // See countdown.h for full interface documentation.
 void Countdown_start(uint32_t durationMs) {
-    _startTick     = _readTimer();
-    _durationTicks = MS_TO_TICKS(durationMs);
     _expired       = false;
     _active        = true;
+    _startTick     = _readTimer();
+    _durationTicks = MS_TO_TICKS(durationMs);
 }
 
 // See countdown.h for full interface documentation.
@@ -65,7 +65,7 @@ uint32_t Countdown_getSecondsRemaining(void) {
     if (elapsed >= _durationTicks) return 0;
 
     // 10,000 ticks/sec — integer divide gives whole seconds remaining
-    return (_durationTicks - elapsed) / 9000UL;
+    return (_durationTicks - elapsed) / 10000UL;
 }
 
 // See countdown.h for full interface documentation.
