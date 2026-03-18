@@ -90,7 +90,7 @@ int Ultrasonic_getDistance(void) {
 
 bool Ultrasonic_isLoitering(int distanceThresholdCm, uint32_t timeLimitMs) {
     uint64_t nowUs     = readTimer(); // microseconds since boot
-    uint64_t limitUs   = (uint64_t)timeLimitMs * 100ULL;
+    uint64_t limitUs   = (uint64_t)timeLimitMs * 10ULL;
 
     if (_distance <= distanceThresholdCm) {
         if (!_wasClose) {
