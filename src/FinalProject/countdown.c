@@ -39,8 +39,8 @@ void Countdown_init(void) {
     uint32_t timer_config  = (TIMER_DIVIDER_VALUE << 13);
     timer_config          |= TIMER_INCREMENT_MODE;
     timer_config          |= TIMER_ENABLE;
-    *((volatile uint32_t *)TIMG_T1CONFIG_REG(0)) = timer_config;
-    *((volatile uint32_t *)TIMG_T1UPDATE_REG(0)) = 1;
+    *((volatile uint32_t *)TIMG_T1CONFIG_REG(1)) = timer_config;
+    *((volatile uint32_t *)TIMG_T1UPDATE_REG(1)) = 1;
 }
 
 // See countdown.h for full interface documentation.
@@ -77,11 +77,12 @@ bool Countdown_hasExpired(void) {
         _active  = false;
         _expired = true;
     }
-
+    
     if (_expired) {
         _expired = false;
         return true;
     }
+    
     return false;
 }
 
@@ -99,6 +100,6 @@ bool Countdown_isActive(void) {
  * @return Current timer tick count (low 32 bits).
  */
 static uint32_t _readTimer(void) {
-    *((volatile uint32_t *)TIMG_T1UPDATE_REG(0)) = 1;
-    return *((volatile uint32_t *)TIMG_T1LO_REG(0));
+    *((volatile uint32_t *)TIMG_T1UPDATE_REG(1)) = 1;
+    return *((volatile uint32_t *)TIMG_T1LO_REG(1));
 }

@@ -691,10 +691,31 @@ void Countdown_Task(void *pvParameters) {
 
     while (1) {
         // Block when idle; non-blocking poll when counting
+        bool bruh = Countdown_isActive();
+        Serial.print("Countdown active? ");
+        Serial.println(bruh);
         BaseType_t got = xQueueReceive(countdownQueue, &cmd,
                                        counting ? 0 : portMAX_DELAY);
         if (got == pdTRUE) {
+            Serial.print("bruh6");
+            Serial.println("bruh7");
             if (cmd == CMD_COUNTDOWN_START) {
+                Serial.print("bruh3");
+                Serial.println("bruh");
+                Serial.print("bruh3");
+                Serial.println("bruh");
+                Serial.print("bruh3");
+                Serial.println("bruh");
+                Serial.print("bruh3");
+                Serial.println("bruh");
+                Serial.print("bruh3");
+                Serial.println("bruh");
+                Serial.print("bruh3");
+                Serial.println("brh");
+                Serial.print("bru32");
+                Serial.println("b3uh");
+                Serial.print("bruh2");
+                Serial.println("bruh");
                 Countdown_start(ALARM_GRACE_PERIOD);
                 lastSecond = Countdown_getSecondsRemaining();
                 counting   = true;
@@ -709,6 +730,7 @@ void Countdown_Task(void *pvParameters) {
             bool pinBeingEntered = (IRRemote_getDigitCount() > 0);
 
             if (secsLeft != lastSecond) {
+                Serial.println("Peters right");
                 lastSecond = secsLeft;          // always track the tick
                 if (!pinBeingEntered) {         // only display if no pin in progress
                     system_message_t uiMsg;
@@ -721,7 +743,24 @@ void Countdown_Task(void *pvParameters) {
             }
 
             if (Countdown_hasExpired()) {
+                Serial.print("bruh2");
+                Serial.println("bruh");
+                Serial.print("bruh2");
+                Serial.println("bruh");
+                Serial.print("bruh2");
+                Serial.println("bruh");
+                Serial.print("bruh2");
+                Serial.println("bruh");
+                Serial.print("bruh2");
+                Serial.println("bruh");
+                Serial.print("bruh2");
+                Serial.println("bruh");
+                Serial.print("bruh2");
+                Serial.println("bruh");
+                Serial.print("bruh2");
+                Serial.println("bruh");
                 counting = false;
+                Countdown_cancel();
                 xQueueSend(sensorQueue, &expiredMsg, 0);
             }
         }
@@ -763,7 +802,7 @@ void setup() {
     countdownQueue = xQueueCreate(5,  sizeof(countdown_cmd_t));
 
     xTaskCreatePinnedToCore(PIR_Task,                "PIR Task",            4096, NULL, 2, NULL, 0);
-    xTaskCreatePinnedToCore(Ultrasonic_Task,         "Ultrasonic Task",     4096, NULL, 3, NULL, 0);
+    xTaskCreatePinnedToCore(Ultrasonic_Task,         "Ultrasonic Task",     4096, NULL, 2, NULL, 0);
     xTaskCreatePinnedToCore(IR_Task,                 "IR Task",             4096, NULL, 2, NULL, 0);
     xTaskCreatePinnedToCore(RFID_Task,               "RFID Task",           4096, NULL, 2, NULL, 0);
     xTaskCreatePinnedToCore(Countdown_Task,          "Countdown Task",      4096, NULL, 2, NULL, 0);
