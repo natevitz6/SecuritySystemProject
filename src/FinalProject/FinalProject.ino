@@ -717,7 +717,10 @@ void Countdown_Task(void *pvParameters) {
                 Serial.print("bruh2");
                 Serial.println("bruh");
                 Countdown_start(ALARM_GRACE_PERIOD);
+                delayMicroseconds(10);
                 lastSecond = Countdown_getSecondsRemaining();
+                Serial.print("Seconds Left: ");
+                Serial.println(lastSecond);
                 counting   = true;
             } else if (cmd == CMD_COUNTDOWN_CANCEL) {
                 Countdown_cancel();
@@ -802,7 +805,7 @@ void setup() {
     countdownQueue = xQueueCreate(5,  sizeof(countdown_cmd_t));
 
     xTaskCreatePinnedToCore(PIR_Task,                "PIR Task",            4096, NULL, 2, NULL, 0);
-    xTaskCreatePinnedToCore(Ultrasonic_Task,         "Ultrasonic Task",     4096, NULL, 2, NULL, 0);
+    xTaskCreatePinnedToCore(Ultrasonic_Task,         "Ultrasonic Task",     4096, NULL, 3, NULL, 0);
     xTaskCreatePinnedToCore(IR_Task,                 "IR Task",             4096, NULL, 2, NULL, 0);
     xTaskCreatePinnedToCore(RFID_Task,               "RFID Task",           4096, NULL, 2, NULL, 0);
     xTaskCreatePinnedToCore(Countdown_Task,          "Countdown Task",      4096, NULL, 2, NULL, 0);

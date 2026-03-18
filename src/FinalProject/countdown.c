@@ -46,9 +46,9 @@ void Countdown_init(void) {
 // See countdown.h for full interface documentation.
 void Countdown_start(uint32_t durationMs) {
     _expired       = false;
-    _active        = true;
-    _startTick     = _readTimer();
     _durationTicks = MS_TO_TICKS(durationMs);
+    _startTick     = _readTimer();
+    _active        = true;
 }
 
 // See countdown.h for full interface documentation.
@@ -78,12 +78,7 @@ bool Countdown_hasExpired(void) {
         _expired = true;
     }
     
-    if (_expired) {
-        _expired = false;
-        return true;
-    }
-    
-    return false;
+    return _expired;
 }
 
 // See countdown.h for full interface documentation.
@@ -101,5 +96,6 @@ bool Countdown_isActive(void) {
  */
 static uint32_t _readTimer(void) {
     *((volatile uint32_t *)TIMG_T1UPDATE_REG(1)) = 1;
+    *((volatile uint32_t *)TIMG_T1UPDATE_REG(1)) = 1; 
     return *((volatile uint32_t *)TIMG_T1LO_REG(1));
 }
